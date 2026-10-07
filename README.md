@@ -551,6 +551,8 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 
 ## 下载与校验
 
+> 图形化发布页：**https://mengtan100.github.io/pocketpilot/** —— 一键下载 APK、复制插件安装命令、查看免责声明。
+
 正式包在 [Releases](https://github.com/MengTan100/pocketpilot/releases) 里发布，包含两个东西：
 
 | 文件 | 用途 |

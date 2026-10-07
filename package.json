@@ -1,0 +1,62 @@
+{
+  "name": "dsh-plugin-phone-bridge",
+  "version": "0.4.0",
+  "description": "PocketPilot 的 DSH 插件：在侧栏底部加入「手机连接 / Phone link」入口，弹出配对二维码；界面文字跟随系统语言。装到电脑端 DSH，与手机 App 配套使用。",
+  "type": "module",
+  "main": "pc/dsh-plugin-phone-bridge/lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./pc/dsh-plugin-phone-bridge/lib/index.js"
+    },
+    "./client": {
+      "default": "./pc/dsh-plugin-phone-bridge/lib/client.js"
+    },
+    "./cordis.patch.yml": "./pc/dsh-plugin-phone-bridge/cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./pc/dsh-plugin-phone-bridge/cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2"
+  },
+  "files": [
+    "pc/dsh-plugin-phone-bridge/lib",
+    "pc/dsh-plugin-phone-bridge/cordis.patch.yml"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "phone",
+    "remote"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MengTan100/pocketpilot.git"
+  },
+  "homepage": "https://mengtan100.github.io/pocketpilot/",
+  "engines": {
+    "node": ">=20"
+  },
+  "_comment": "仓库根包：只为让 `dsh plugin add github:MengTan100/pocketpilot` 这类『填仓库地址安装』可用 —— 真正的插件源码在 pc/dsh-plugin-phone-bridge/，两个 package.json 的 dsh 字段必须保持一致。",
+  "_watermark": {
+    "project": "dsh-phone-bridge",
+    "origin": "8db5189c93",
+    "license": "MIT",
+    "notice": "见 WATERMARK.md"
+  }
+}
