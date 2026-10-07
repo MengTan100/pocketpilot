@@ -117,7 +117,7 @@
     <string name="terms_version_note">Notice version %1$d · acceptance is required before the first connection.</string>
 
     <!-- 仓库地址：不翻译，改这里即可全局生效 -->
-    <string name="project_repo_url" translatable="false">https://github.com/</string>
+    <string name="project_repo_url" translatable="false">https://github.com/MengTan100/pocketpilot</string>
 
     <!--
       构建指纹（水印第 4 层）：不显示在任何界面上，但会编进 APK 的资源表。

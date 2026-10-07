@@ -55,6 +55,79 @@ window.__ModuleLoader__.load({
 		const PAIR_URL = `${BRIDGE_ORIGIN}/pair?embed=1`;
 		const HEALTH_URL = `${BRIDGE_ORIGIN}/health`;
 
+		// ─────────────────────────── 多语言（跟随系统 / DSH 的语言设置）
+		//
+		// 机制（读 DSH 源码 dsh-client-locale 得到，非猜测）：
+		//   ctx.locale.register(NS, { zh, en })  注册字典
+		//   ctx.locale.bind(NS)                  取翻译函数 t(key, params)
+		//   槽位注册里带 locale: NS              DSH 会把 t 作为 props.t 传给组件
+		//
+		// 这里**不把 t 一层层往下传 props**，而是解析一次存到模块级的 T：
+		// 组件直接调 T('key') 即可，且 T 在调用时读取当前语言，
+		// 语言切换后 DSH 的 LocaleFace 会让界面重渲染，取到的就是新语言。
+		//
+		// 另配**兜底**：万一所在 DSH 版本没有 locale 服务（或注册失败），
+		// 就按浏览器/系统语言（navigator.languages → navigator.language → <html lang>）选内置字典，
+		// 保证"跟随系统语言"这件事在任何情况下都成立，而不是退化成英文或中文写死。
+		const NS = "phoneBridge";
+		const DICTS = {
+			zh: {
+				entry: "手机连接",
+				title: T("entry"),
+				close: "关闭",
+				checking: "正在检查手机桥接…",
+				notRunning: "没有检测到手机桥接。",
+				notRunningHint: "请在电脑上运行 pc\\start-bridge.bat（首次会显示配对二维码），然后点下面的重试。",
+				retry: "重试",
+				hint: "用手机 App 扫这个二维码即可配对；也可以手动输入上面的配对码。此页面只在本机回环地址打开。",
+				sectionHint: "这个页面只在电脑本机（127.0.0.1）打开，二维码里的访问令牌不会离开你的电脑。",
+			},
+			en: {
+				entry: "Phone link",
+				title: "Phone link",
+				close: "Close",
+				checking: "Checking the phone bridge…",
+				notRunning: "Phone bridge not detected.",
+				notRunningHint: "Run pc\\start-bridge.bat on your computer (it shows the pairing QR code on first run), then tap Retry.",
+				retry: "Retry",
+				hint: "Scan this QR code with the phone app to pair; you can also type the pairing code above. This page only opens on the local loopback address.",
+				sectionHint: "This page is only served on the computer itself (127.0.0.1); the access token inside the QR code never leaves your computer.",
+			},
+		};
+
+		/** 按系统/浏览器语言挑字典（zh 开头→中文，其余→英文）。 */
+		function detectLang() {
+			try {
+				const candidates = [].concat(
+					navigator.languages || [], navigator.language || [], document.documentElement.lang || ""
+				);
+				for (const l of candidates) {
+					const s = String(l || "").toLowerCase();
+					if (s.startsWith("zh")) return "zh";
+					if (s.startsWith("en")) return "en";
+				}
+			} catch (e) { /* 非浏览器环境 */ }
+			return "en";
+		}
+
+		/** 当前翻译函数；先给个按系统语言查内置字典的兜底。 */
+		let T = (key) => (DICTS[detectLang()] || DICTS.en)[key] || DICTS.en[key] || key;
+
+		/** 用 DSH 的翻译函数替换兜底（查不到时仍回落内置字典，避免露出原始 key）。 */
+		function useTranslator(fn) {
+			if (typeof fn !== "function") return;
+			T = (key, params) => {
+				let out;
+				try { out = fn(key, params); } catch (e) { out = undefined; }
+				if (out === undefined || out === null || out === key) {
+					const dict = DICTS[detectLang()] || DICTS.en;
+					return dict[key] || DICTS.en[key] || key;
+				}
+				return out;
+			};
+		}
+
+
 		/**
 		 * 安全不变量：配对页含令牌，只允许回环地址。
 		 * 返回 null 表示通过，否则返回给用户看的错误文案。
@@ -236,24 +309,24 @@ window.__ModuleLoader__.load({
 				return jsx("div", { style: CENTER_BOX, children: jsx("div", { children: invalid }) });
 			}
 			if (alive === null) {
-				return jsx("div", { style: CENTER_BOX, children: jsx("div", { children: "正在检查手机桥接…" }) });
+				return jsx("div", { style: CENTER_BOX, children: jsx("div", { children: T("checking") }) });
 			}
 			if (alive === false) {
 				return jsxs("div", {
 					style: CENTER_BOX,
 					children: [
-						jsx("div", { children: "没有检测到手机桥接。" }),
+						jsx("div", { children: T("notRunning") }),
 						jsx("div", {
 							style: { fontSize: 13, color: "#8b93a7", maxWidth: 380, lineHeight: 1.7 },
-							children: "请在电脑上运行 pc\\start-bridge.bat（首次会显示配对二维码），然后点下面的重试。",
+							children: T("notRunningHint"),
 						}),
-						jsx("button", { type: "button", onClick: probe, style: RETRY_BTN, children: "重试" }),
+						jsx("button", { type: "button", onClick: probe, style: RETRY_BTN, children: T("retry") }),
 					],
 				});
 			}
 			return jsx("iframe", {
 				src: PAIR_URL,
-				title: "手机连接",
+				title: T("entry"),
 				referrerPolicy: "no-referrer",
 				style: {
 					width: "100%",
@@ -293,7 +366,7 @@ window.__ModuleLoader__.load({
 					children: jsxs("div", {
 						role: "dialog",
 						"aria-modal": "true",
-						"aria-label": "手机连接",
+						"aria-label": T("entry"),
 						style: PANEL,
 						children: [
 							jsxs("div", {
@@ -303,15 +376,15 @@ window.__ModuleLoader__.load({
 										style: { display: "flex", alignItems: "center", gap: 8 },
 										children: [
 											jsx(PhoneIcon, { size: 16 }),
-											jsx("span", { style: { fontWeight: 600 }, children: "手机连接" }),
+											jsx("span", { style: { fontWeight: 600 }, children: T("title") }),
 										],
 									}),
 									jsx("button", {
 										type: "button",
 										onClick: onClose,
 										style: CLOSE_BTN,
-										title: "关闭（Esc）",
-										"aria-label": "关闭",
+										title: T("close"),
+										"aria-label": T("close"),
 										children: "✕",
 									}),
 								],
@@ -324,7 +397,7 @@ window.__ModuleLoader__.load({
 							}),
 							jsx("div", {
 								style: HINT,
-								children: "用手机 App 扫这个二维码即可配对；也可以手动输入上面的配对码。此页面只在本机回环地址打开。",
+								children: T("hint"),
 							}),
 						],
 					}),
@@ -346,11 +419,11 @@ window.__ModuleLoader__.load({
 						key: "entry",
 						type: "button",
 						onClick: () => setOpen(true),
-						title: "手机连接",
-						"aria-label": "手机连接",
+						title: T("entry"),
+						"aria-label": T("entry"),
 						style: wide ? WIDE_BTN : RAIL_BTN,
 						children: wide
-							? [jsx(PhoneIcon, { key: "i", size: 16 }), jsx("span", { key: "t", children: "手机连接" })]
+							? [jsx(PhoneIcon, { key: "i", size: 16 }), jsx("span", { key: "t", children: T("title") })]
 							: jsx(PhoneIcon, { size: 18 }),
 					}),
 					open
@@ -368,7 +441,7 @@ window.__ModuleLoader__.load({
 					jsx(PairFrame, {}),
 					jsx("div", {
 						style: { color: "#8b93a7", fontSize: 12, paddingTop: 10, lineHeight: 1.6 },
-						children: "这个页面只在电脑本机（127.0.0.1）打开，二维码里的访问令牌不会离开你的电脑。",
+						children: T("sectionHint"),
 					}),
 				],
 			});
@@ -378,6 +451,23 @@ window.__ModuleLoader__.load({
 		const inject = ["slots"];
 
 		function apply(ctx) {
+			// ③ 多语言：注册中英字典并接上 DSH 的翻译函数，界面文字跟随系统/DSH 语言设置。
+			//    用 ctx.effect 包住注册 —— DSH 官方插件都这么写，插件卸载/热更新时会自动注销字典，
+			//    不会在反复热加载后残留重复注册。
+			try {
+				if (ctx.locale && typeof ctx.locale.register === "function") {
+					ctx.effect(
+						() => ctx.locale.register(NS, { zh: DICTS.zh, en: DICTS.en }),
+						"phone-bridge: dictionaries"
+					);
+				}
+				if (ctx.locale && typeof ctx.locale.bind === "function") {
+					useTranslator(ctx.locale.bind(NS));
+				}
+			} catch (error) {
+				// 所在 DSH 版本没有 locale 服务也不影响使用：T 会自动回退到按系统语言选内置字典
+				console.error("[phone-bridge] 多语言注册失败，回退内置字典", error);
+			}
 			// ① 主入口：侧栏底部，紧挨设置齿轮（list 槽，必须带 id）
 			try {
 				ctx.slots.inject("sidebar.footer.action", () =>
@@ -386,7 +476,8 @@ window.__ModuleLoader__.load({
 							name: "sidebar.footer.action",
 							id: "phone-bridge-action",
 							priority: 10,
-							label: () => "手机连接",
+							label: () => T("entry"),
+							locale: NS,
 						},
 						FooterAction
 					)
@@ -403,7 +494,8 @@ window.__ModuleLoader__.load({
 							name: "settings.section",
 							id: "phone-bridge",
 							priority: 1,
-							label: () => "手机连接",
+							label: () => T("entry"),
+							locale: NS,
 						},
 						PhoneBridgeSection
 					)
