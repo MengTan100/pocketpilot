@@ -607,11 +607,41 @@ const BRIDGE_AUTH_COOKIE = 'dsh-bridge-auth';
  * USB 模式：桥接只绑回环、且仅经 adb reverse 暴露给手机，故直接放行；
  * 局域网模式：DSH 界面能执行任意代码，必须凭桥接令牌访问，校验后下发 Cookie。
  */
-function authorizeDshAccess(req, url, res) {
-  if (config.mode !== 'lan') return true;
-  const cookieHeader = String(req.headers.cookie || '');
-  if (cookieHeader.indexOf(`${BRIDGE_AUTH_COOKIE}=${config.bridgeToken}`) !== -1) return true;
-  if (url.searchParams.get('k') === config.bridgeToken) {
+  /**
+   * 恒定时间比较桥接令牌。长度不同直接 false（timingSafeEqual 要求等长）。
+   * 替代原先散落三处的 indexOf 子串比较 —— 那种写法既是子串匹配（前缀对就算过）、
+   * 又不是恒定时间，还与 authorize() 的实现不一致。
+   */
+  function tokenEquals(provided) {
+    const a = Buffer.from(String(provided == null ? '' : provided), 'utf8');
+    const b = Buffer.from(config.bridgeToken, 'utf8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+
+  /** 从 Cookie 头里取出本桥接的鉴权 cookie 值（按名精确匹配，不用子串）。 */
+  function bridgeCookieValue(cookieHeader) {
+    for (const part of String(cookieHeader || '').split(';')) {
+      const i = part.indexOf('=');
+      if (i < 0) continue;
+      if (part.slice(0, i).trim() === BRIDGE_AUTH_COOKIE) return part.slice(i + 1).trim();
+    }
+    return '';
+  }
+
+  /**
+   * 反代入口的访问控制。
+   * ⚠️ 必须**先算来源、再算模式**：mode 只描述「手机是如何连进来的」，
+   * 不能当作「这个请求可不可信」的依据 —— 隧道把请求落在 127.0.0.1（来源看起来就是本机），
+   * 但它来自公网。曾经写成 `if (config.mode !== 'lan') return true;`，于是 usb 模式 + 开隧道时，
+   * 任何人访问 https://<隧道域名>/dsh/ 都能**无令牌**进入完整 DSH 界面
+   * （permissionPreset 默认 danger-full-access），等于把电脑远程执行权挂到公网。
+   */
+  function authorizeDshAccess(req, url, res) {
+    const external = isExternalRequest(req);
+    if (!external && config.mode !== 'lan') return true;   // 仅「本机/内网 + 非局域网模式」才免令牌
+    const cookieHeader = String(req.headers.cookie || '');
+    if (tokenEquals(bridgeCookieValue(cookieHeader))) return true;
+    if (tokenEquals(url.searchParams.get('k'))) {
     res.setHeader('Set-Cookie',
       `${BRIDGE_AUTH_COOKIE}=${config.bridgeToken}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`);
     return true;
@@ -1021,9 +1051,12 @@ const server = http.createServer(async (req, res) => {
     // 因此"仅凭回环地址"会把公网用户误判成本机 —— 他们就能直接读到
     // /pair.json（含 bridge token 与异地地址）。
     // 所以必须再排除"来自隧道的请求"（CF 头 / 隧道 Host）。
-    const localPairView = fromLoopback
-      && !isExternalRequest(req)
-      && (route === '/pair.json' || route === '/pair');
+      // 顶层导航不带 Origin；带了 Origin 说明是页面里的跨源请求（fetch/XHR），
+      // 一律不当作「本地视图」，避免本机回环被任意网页借道读走令牌。
+      const localPairView = fromLoopback
+        && !isExternalRequest(req)
+        && !req.headers.origin
+        && (route === '/pair.json' || route === '/pair');
     const isPublic = PUBLIC_PATHS.has(route) || usbOnlyPublic || localPairView;
     if (!isPublic && !authorize(req, body)) {
       auditLog(req, route, 'UNAUTHORIZED');
@@ -1203,7 +1236,11 @@ const server = http.createServer(async (req, res) => {
           'content-type': 'application/json; charset=utf-8',
           'content-length': Buffer.byteLength(body),
           'cache-control': 'no-store',
-          'access-control-allow-origin': '*',
+            // ⚠️ 原本这里是 'access-control-allow-origin': '*'，必须去掉：
+            // 用户浏览器里任何网页都能 fetch('http://127.0.0.1:3080/pair.json')，
+            // 本机回环 + 该响应头 = 跨源读到 bridge token（192 位明文），拿到即 RCE。
+            // 插件父页面按设计**不读** /pair.json（见 client.js 注释），
+            // 手机 App 是原生 HTTP 客户端不受 CORS 影响，故去掉它不影响任何功能。
         });
         res.end(body);
         return;
@@ -1419,13 +1456,15 @@ server.on('upgrade', (req, socket, head) => {
       socket.destroy();
       return;
     }
-    if (config.mode === 'lan') {
-      const cookieHeader = String(req.headers.cookie || '');
-      if (cookieHeader.indexOf(`${BRIDGE_AUTH_COOKIE}=${config.bridgeToken}`) === -1) {
-        socket.destroy();
-        return;
+      // WebSocket 也必须「先算来源」：隧道进来的 WS 请求来源同样是 127.0.0.1，
+      // 只看 mode 会让 usb+隧道场景下的 WS 通道绕过鉴权（与 /dsh/* 同源问题）。
+      if (isExternalRequest(req) || config.mode === 'lan') {
+        const cookieHeader = String(req.headers.cookie || '');
+        if (!tokenEquals(bridgeCookieValue(cookieHeader))) {
+          socket.destroy();
+          return;
+        }
       }
-    }
     proxy.handleUpgrade(req, socket, head);
   } catch (error) {
     log(`WS 升级转发失败：${error.message}`);

@@ -25,6 +25,18 @@ class Prefs(context: Context) {
         get() = sp.getString("last_good", "") ?: ""
         set(v) = sp.edit().putString("last_good", v).apply()
 
+    /**
+     * 当前令牌是**发给哪台主机**的（只存 host，不存端口）。
+     *
+     * 为什么单独记一个：令牌 = 电脑的远程执行权限，只对发牌的那台电脑有效。
+     * 一旦连接目标换成另一台主机，旧令牌必须作废 —— 否则新主机（可能是二维码里
+     * 指定的恶意地址）就能白拿一个有效令牌。这里把"发给谁"落盘，
+     * 使判断在 App 重启后依然成立（重启后内存里没有上一次的地址）。
+     */
+    var tokenHost: String
+        get() = sp.getString("token_host", "") ?: ""
+        set(v) = sp.edit().putString("token_host", v).apply()
+
     /** 与 PC 的时钟偏差（ms，正=PC 比手机快），由握手测算 */
     var clockSkewMs: Long
         get() = sp.getLong("clock_skew", 0L)

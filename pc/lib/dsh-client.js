@@ -27,6 +27,17 @@ const path = require('node:path');
 /** 从 dsh web 的启动输出里抓取带 token 的 URL。 */
 const LAUNCH_URL_RE = /(https?:\/\/[^\s"'`]+?\?token=([A-Za-z0-9_-]{16,}))/;
 
+/**
+ * 抹掉文本里的凭据，用于一切"可能被写进日志/外发"的输出路径。
+ * 覆盖两类：DSH 启动行的 `?token=`（换得到完整 DSH 会话），
+ * 以及 `dsh-auth-*` Cookie 值。宁可多抹，不可漏抹 —— 日志是用户会主动外发的文件。
+ */
+function redactSecrets(text) {
+  return String(text)
+    .replace(/([?&]token=)[^\s&"']+/gi, '$1***')
+    .replace(/(dsh-auth-[A-Za-z0-9]+=)[^\s;,"']+/gi, '$1***');
+}
+
 /** session/page 单页消息数（沿用社区插件取值）。 */
 const HISTORY_PAGE_MESSAGES = 50;
 
@@ -178,8 +189,12 @@ class DshClient {
 
     // 子进程输出转发到桥接日志，便于诊断实例级异常
     child.stdout.on('data', (buf) => {
-      const text = buf.toString('utf8').trim();
-      if (text) this.log(`[dsh] ${text.slice(0, 2000)}`);
+      // ⚠️ 必须先抹掉启动行里的 token：DSH 会把
+      //   `dsh web: http://127.0.0.1:3081/?token=<launchToken>`
+      // 打到 stdout，原样落盘会让 pc/logs/bridge.log 长期存着能换到完整 DSH 会话
+      // （= 任意命令执行）的凭据 —— 而 SECURITY.md 明确要求日志不得含令牌，
+      // 用户又被引导把这份日志外发求助。maskSecret() 只保护了 bridge token。
+      const text = redactSecrets(buf.toString('utf8')).trim();
     });
 
     const launch = new Promise((resolve, reject) => {
@@ -195,7 +210,7 @@ class DshClient {
       child.stdout.on('data', onChunk);
       child.stderr.on('data', (buf) => {
         const text = buf.toString('utf8').trim();
-        if (text) this.stderrTail.push(text);
+        if (text) this.stderrTail.push(redactSecrets(text));
         // dsh 在部分平台把启动行写到 stderr
         onChunk(buf);
       });

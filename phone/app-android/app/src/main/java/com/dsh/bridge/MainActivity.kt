@@ -188,6 +188,18 @@ class MainActivity : AppCompatActivity() {
     /** 是否记录过用户操作（从未记录时不应被闸门拦住，否则冷启动就永远无法恢复）。 */
     private fun userTouchRecorded(): Boolean = lastUserTouchAt > 0L
 
+    // ---------------------------------------------------------------- 敏感串打码
+
+    /**
+     * 打码后再写日志。
+     *
+     * 为什么必须做：入口地址形如 `http://<ip>:3080/dsh/?k=<bridgeToken>`，
+     * 配对串形如 `dsh1|<host>|<bridgeToken>` —— 而令牌就是电脑的远程执行权限（RCE）。
+     * 日志会进 logcat、日志文件和"导出反馈"的附件，一旦泄漏，等于把电脑交出去。
+     * 打码规则集中在 Bridge.redact（唯一实现），这里只负责在调用点使用它。
+     */
+    private fun redactToken(s: String): String = Bridge.redact(s)
+
     /** 网页发起的文件选择：两条通道，都最终在对话框里以 @路径 呈现。 */
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -207,7 +219,9 @@ class MainActivity : AppCompatActivity() {
             Log.d(TAG, "扫码取消或为空")
             return@registerForActivityResult
         }
-        Log.d(TAG, "扫码结果: ${result.contents}")
+        // 二维码内容就是 `dsh1|<host>|<token>`：原样打进日志等于把令牌落盘到 logcat，
+        // 所以只记前若干字符 + ***（既保留"扫到了什么格式"的排查价值，又不泄漏令牌）。
+        Log.d(TAG, "扫码结果: ${result.contents.take(4)}***")
         applyPairing(result.contents)
     }
 
@@ -697,17 +711,11 @@ class MainActivity : AppCompatActivity() {
         // 同步监视器必须在**文档开始**注入：它要 hook WebSocket，
         // 而 DSH 的实时连接在页面脚本跑起来后就建立了。onPageFinished 注入已经太晚
         // （实测 seen=false，那条连接完全抓不到，指示器形同虚设）。
-        try {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                WebViewCompat.addDocumentStartJavaScript(binding.webView, SYNC_MONITOR_JS, setOf("*"))
-                Log.d(TAG, "同步监视器已注册为文档开始脚本")
-            } else {
-                Log.w(TAG, "当前 WebView 不支持文档开始注入，改用 onPageFinished 兜底")
-            }
-        } catch (t: Throwable) {
-            // 注册失败不影响主流程：onPageFinished 会兜底注入（虽然会错过启动那条连接）
-            Log.w(TAG, "注册文档开始脚本失败: ${t.message}")
-        }
+        //
+        // ⚠️ 注入**不能**在这里用 setOf("*") 做：那等于把脚本和 DshApp 注入对象
+        //    送到所有来源（含页面里被点开的外链站点）。注入的 origin 白名单依赖
+        //    运行时才知道的已配对地址，所以真正的注册挪到 onPageStarted
+        //    （见 ensureDocumentStartScript），那里已经能算出白名单。
 
         with(binding.webView.settings) {
             javaScriptEnabled = true
@@ -786,6 +794,9 @@ class MainActivity : AppCompatActivity() {
         }
         binding.webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                // 注入 origin 白名单要在 super 之前算好：文档开始脚本必须在
+                // 文档开始执行前注册，晚一拍就错过 DSH 建立 WebSocket 的时机。
+                ensureDocumentStartScript()
                 super.onPageStarted(view, url, favicon)
                 pageLoading = true          // 加载开始：看门狗暂停破坏性恢复
             }
@@ -805,6 +816,22 @@ class MainActivity : AppCompatActivity() {
                 setStatus(Status.OK, getString(R.string.status_ready), url ?: "")
             }
 
+            /**
+             * 只允许桥接自己在 WebView 内导航，其余外链交给系统浏览器。
+             *
+             * 为什么必须拦：这个 WebView 里住着 DshApp 注入对象（页面能借此通知 App），
+             * 且页面 URL 上带着桥接令牌。页面里任何一个外链 —— 或页面被注入后新加的一个链接 ——
+             * 若在本 WebView 里打开，就等于把"高信任上下文"交给外部站点；而且用户返回时
+             * 那个站点仍在 WebView 的历史里。所以这里一律截断（return true），改用系统浏览器。
+             */
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val uri = request?.uri ?: return false
+                return handleUrlInWebView(uri)
+            }
+
             override fun onReceivedError(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -817,6 +844,134 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- WebView 来源白名单
+    //
+    // 两条规则共用同一份白名单：
+    //   ① 文档开始脚本（SYNC_MONITOR_JS）只注入白名单来源；
+    //   ② 页面内导航只允许白名单来源在 WebView 里打开。
+    //
+    // 为什么是白名单而不是黑名单：判断"某个站点是不是恶意的"做不到；
+    //   但"这是不是我自己的那台电脑的桥接"可以 —— 已配对地址 + 回环 USB + 隧道，
+    //   三者之外一律不算"自己人"。这样即使页面被注入、或用户误点外链，
+    //   也走不到"外部站点拿到 DshApp 注入与令牌"的那一步。
+
+    /** 回环 USB 隧道：由 PC 端 adb reverse 建立，端口固定 3080（见 Bridge.buildCandidates）。 */
+    private val LOOPBACK_ORIGIN = "http://127.0.0.1:3080"
+
+    /** 隧道来源通配：桥接用的是 trycloudflare 的临时域名，每次重启都会变，只能通配。 */
+    private val TUNNEL_ORIGIN = "https://*.trycloudflare.com"
+
+    /** 已经注册进 WebView 的那组 origin（相同就不必重复注册）。 */
+    private var registeredOrigins: Set<String> = emptySet()
+
+    /** 文档开始脚本句柄：换 origin 时先撤旧的，否则旧白名单会一直留着。 */
+    private var syncScriptHandler: androidx.webkit.ScriptHandler? = null
+
+    /**
+     * 由当前已配对信息算出允许的 origin 集合。
+     *
+     * 为什么必须"运行时算"而不是写死：局域网地址只有握手后才知道，
+     * 隧道地址每次重启桥接都会变；写死的白名单要么挡掉自己，要么形同虚设。
+     */
+    private fun allowedBridgeOrigins(): Set<String> {
+        val out = mutableSetOf<String>()
+        out += LOOPBACK_ORIGIN
+        // 已配对 / 上次可用 / 异地 三个地址都可能成为页面真正所在的来源
+        listOf(prefs.baseUrl, prefs.lastGoodBase, prefs.remoteBase).forEach { base ->
+            val host = Bridge.hostOf(base) ?: return@forEach
+            // 只有过 Bridge 白名单的主机才允许进 WebView 来源集合：
+            // 修好"配对来源"之后，这里再兜一层，防止别处写进来的脏地址被当成自己人。
+            if (!Bridge.isAllowedBridgeHost(host)) return@forEach
+            descriptorOrigin(base)?.let { out += it }
+        }
+        out += TUNNEL_ORIGIN
+        return out
+    }
+
+    /** 取一个地址的 origin：协议 + 主机 + 端口（端口缺省时按协议默认值补全）。 */
+    private fun descriptorOrigin(base: String): String? = try {
+        val u = java.net.URL(Bridge.normalize(base))
+        val port = if (u.port > 0) u.port else if (u.protocol == "https") 443 else 80
+        "${u.protocol}://${u.host}:$port"
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
+     * 注册文档开始脚本（带 origin 白名单）。
+     *
+     * ⚠️ 这里绝不能用 setOf("*")：文档开始注入会进入**每个 frame**，
+     * 而 setOf("*") 还会把脚本送到所有来源 —— 包括页面里被打开的外链站点。
+     * 白名单依赖运行时地址，所以本方法必须在本 Activity 已经知道 baseUrl 之后调用
+     * （见 onPageStarted / applyHandshake）。
+     *
+     * 不支持该特性时保持现状：onPageFinished 会兜底注入（会错过启动那条连接，
+     * 但功能不至于全废，且不会崩）。
+     */
+    private fun ensureDocumentStartScript(): Boolean {
+        val origins = allowedBridgeOrigins()
+        if (origins == registeredOrigins) return registeredOrigins.isNotEmpty()
+        return try {
+            if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                Log.w(TAG, "当前 WebView 不支持文档开始注入，改用 onPageFinished 兜底")
+                return false
+            }
+            // 先撤旧脚本：白名单已经变了还留着旧的，等于旧来源仍然被注入
+            syncScriptHandler?.let {
+                runCatching { WebViewCompat.removeDocumentStartJavaScript(binding.webView, it) }
+            }
+            syncScriptHandler =
+                WebViewCompat.addDocumentStartJavaScript(binding.webView, SYNC_MONITOR_JS, origins)
+            registeredOrigins = origins
+            Log.d(TAG, "同步监视器已注册为文档开始脚本，来源: ${origins.joinToString(" ")}")
+            true
+        } catch (t: Throwable) {
+            // 注册失败不影响主流程：onPageFinished 会兜底注入（虽然会错过启动那条连接）
+            Log.w(TAG, "注册文档开始脚本失败: ${t.message}")
+            false
+        }
+    }
+
+    /**
+     * 处理一次页面内导航请求：放行自家来源与 about:/data:/blob:，其余交给系统浏览器。
+     *
+     * about:blank / data: / blob: 必须放行 —— 重建 WebView 走 about:blank，
+     * DSH 前端也会用 blob:/data: 生成临时内容，拦掉它们等于把功能拦坏。
+     */
+    private fun handleUrlInWebView(uri: Uri): Boolean {
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        if (scheme == "about" || scheme == "data" || scheme == "blob") return false
+
+        val port = if (uri.port > 0) uri.port else if (scheme == "https") 443 else 80
+        val origin = "$scheme://${uri.host ?: ""}:$port"
+        if (allowedBridgeOrigins().any { matchesOrigin(it, origin) }) return false
+
+        // 外链不进这个 WebView：它带着登录态，历史里也会留下那个站点。
+        // 只记主机名，不记完整 URL（可能是带参数的跟踪链接，没必要落盘）。
+        BridgeLog.info("外部导航改交系统浏览器: ${uri.host}")
+        return try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+            true
+        } catch (t: Throwable) {
+            // 没有浏览器可接：宁可留在原地，也不要把外链塞进高信任 WebView
+            BridgeLog.warn("无法用系统浏览器打开外部链接: ${t.message}")
+            true
+        }
+    }
+
+    /** origin 匹配：支持 `https://*.trycloudflare.com` 这种一级通配（与 WebView 的写法一致）。 */
+    private fun matchesOrigin(pattern: String, origin: String): Boolean {
+        if (pattern == origin) return true
+        val star = pattern.indexOf("*.")
+        if (star < 0) return false
+        val prefix = pattern.substring(0, star)
+        val suffix = pattern.substring(star + 1)   // 含前导点，例如 ".trycloudflare.com"
+        if (!origin.startsWith(prefix) || !origin.endsWith(suffix)) return false
+        // 至少要有一个非空子域：`https://trycloudflare.com:443` 不该被通配放行
+        val middle = origin.substring(prefix.length, origin.length - suffix.length)
+        return middle.isNotEmpty()
     }
 
     /**
@@ -1314,12 +1469,31 @@ class MainActivity : AppCompatActivity() {
      *
      * 实测结论（必须记住）：在 onPageFinished 注入**太晚** —— DSH 的 WebSocket 在它之前
      * 就已经建立，hook 装上去时已经错过，`seen` 永远是 false、指示器形同虚设。
-     * 所以主路径是 setupWebView 里的 addDocumentStartJavaScript，本方法只作兼容兜底。
+     * 所以主路径是 onPageStarted 里的 addDocumentStartJavaScript（带 origin 白名单），
+     * 本方法只作兼容兜底。
+     *
+     * 兜底也要守白名单：脚本会调用 DshApp，而 DshApp 在**所有来源**都可用（Android 官方
+     * 对此有明确警告）。若当前页不在自家来源里，绝不注入。
      */
     private fun injectSyncMonitor(view: WebView?) {
+        val current = view?.url
+        if (current != null && !isBridgeOwnUrl(current)) {
+            Log.w(TAG, "当前页面不是桥接来源，跳过同步监视注入")
+            return
+        }
         view?.evaluateJavascript(SYNC_MONITOR_JS) { result ->
             Log.d(TAG, "同步监视注入(兜底): $result")
         }
+    }
+
+    /** 当前地址是否属于桥接自己的来源（用于兜底注入前的判断）。 */
+    private fun isBridgeOwnUrl(url: String): Boolean {
+        val uri = try { Uri.parse(url) } catch (t: Throwable) { return false }
+        val scheme = uri.scheme?.lowercase().orEmpty()
+        if (scheme == "about" || scheme == "data" || scheme == "blob") return true
+        val port = if (uri.port > 0) uri.port else if (scheme == "https") 443 else 80
+        val origin = "$scheme://${uri.host ?: ""}:$port"
+        return allowedBridgeOrigins().any { matchesOrigin(it, origin) }
     }
 
     /**
@@ -1368,6 +1542,13 @@ class MainActivity : AppCompatActivity() {
         }
         Log.d(TAG, "选中通道: ${best.base} (${best.latencyMs}ms)")
 
+        // ⚠️ 必须在**发出令牌之前**判断主机是否换了。
+        //    只清 token 还不够：若这里仍用 prefs.token 去握手，旧令牌就已经发给新主机了，
+        //    那正是"恶意二维码骗走令牌"的路径。清空后本次以无令牌握手，由桥接重新发牌。
+        if (clearTokenIfHostChanged(best.base)) {
+            Log.d(TAG, "连接目标主机已变更，已作废旧令牌（改由本次握手重新领取）")
+        }
+
         var hs = Bridge.handshake(best.base, prefs.token.ifBlank { null })
         Log.d(TAG, "握手结果: ok=${hs.ok} mode=${hs.mode} desktopAlive=${hs.desktopAlive} err=${hs.error}")
         if (!hs.ok && hs.error?.contains("令牌") == true && prefs.token.isNotBlank()) {
@@ -1380,12 +1561,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyHandshake(ep: Bridge.ProbeResult, hs: Bridge.Handshake): Boolean {
-        if (hs.bridgeToken.isNotBlank()) prefs.token = hs.bridgeToken
+        if (hs.bridgeToken.isNotBlank()) {
+            prefs.token = hs.bridgeToken
+            // 新令牌只对发牌的那台主机有效，记下"发给谁"，换主机时据此作废旧令牌
+            prefs.tokenHost = Bridge.hostOf(ep.base).orEmpty()
+        }
         prefs.lastGoodBase = ep.base
         if (hs.serverTime > 0) prefs.clockSkewMs = hs.serverTime - System.currentTimeMillis()
 
         val url = Bridge.entryUrl(ep.base, hs.mode, hs.bridgeToken)
-        Log.d(TAG, "入口地址: $url")
+        // ⚠️ url 里带着 ?k=<令牌>，绝不能原样落日志（见 redactToken）
+        Log.d(TAG, "入口地址: ${redactToken(url)}")
         runOnUiThread {
             val label = if (hs.desktopAlive) getString(R.string.status_desktop) else getString(R.string.status_bridge)
             setStatus(Status.OK, label, "${ep.label} · ${hs.mode} · ${ep.latencyMs}ms")
@@ -1393,6 +1579,8 @@ class MainActivity : AppCompatActivity() {
             if (loadedEntry != url || binding.webView.url.isNullOrBlank()) {
                 loadedEntry = url
                 pageLoading = true          // 加载中：看门狗不做任何破坏性恢复
+                // 页面即将加载：注入白名单现在就能算出来了（onPageStarted 还会再确认一次）
+                ensureDocumentStartScript()
                 binding.webView.loadUrl(url)
             }
         }
@@ -1858,6 +2046,10 @@ class MainActivity : AppCompatActivity() {
         frozenTicks = 0
         binding.webView.stopLoading()
         binding.webView.loadUrl("about:blank")
+        // 重建后页面会重新加载，来源白名单可能也变了：丢掉"已注册"标记，
+        // 让下一次 onPageStarted 重新按当前地址注册文档开始脚本。
+        registeredOrigins = emptySet()
+        syncScriptHandler = null
         binding.webView.postDelayed({
             connect(manual = true)
         }, 400)
@@ -1884,15 +2076,50 @@ class MainActivity : AppCompatActivity() {
     /** 兼容两种格式：紧凑 dsh1|host:port|token，以及早期 JSON。 */
     private fun applyPairing(raw: String) {
         val parsed = Bridge.parsePairing(raw)
-        Log.d(TAG, "解析配对: $parsed")
+        // 配对串里第二项就是令牌：打码后再记，否则一张二维码就把令牌写进了日志
+        Log.d(TAG, "解析配对: ${parsed?.let { (base, token) -> "$base | ${redactToken(token ?: "")}" } ?: "null"}")
         if (parsed == null) {
+            // 走到这里有两种可能：格式不认识，或主机没通过白名单（见 Bridge.parsePairing）。
+            // 后者是**拒绝**而不是"解析失败"，所以提示要明确，避免用户反复重扫。
             toast(getString(R.string.pair_bad_qr))
             return
         }
-        prefs.baseUrl = parsed.first
-        parsed.second?.takeIf { it.isNotBlank() }?.let { prefs.token = it }
+        val newBase = parsed.first
+        // 换了主机就先把**旧**令牌作废，再把二维码里带的新令牌写进去：
+        // 旧令牌属于上一台电脑，绝不能跟着导航发给新主机。
+        clearTokenIfHostChanged(newBase)
+        prefs.baseUrl = newBase
+        parsed.second?.takeIf { it.isNotBlank() }?.let {
+            prefs.token = it
+            // 新令牌绑定新主机；这样紧接着 doConnect 的"换主机"判断不会把它误清掉
+            prefs.tokenHost = Bridge.hostOf(newBase).orEmpty()
+        }
         toast(getString(R.string.pair_ok))
         connect(manual = true)
+    }
+
+    /**
+     * 连接目标换了主机就作废旧令牌，返回是否发生了"换主机"。
+     *
+     * 为什么要有这一步：令牌是发给**某一台电脑**的凭据，换一台主机它就是别人的东西。
+     * 尤其是扫码场景 —— 恶意二维码只要把地址写成自己的域名，就能顺带把旧令牌收走。
+     * 比较对象优先用 tokenHost（记录"令牌发给谁"），没有历史记录时退回
+     * lastGoodBase / baseUrl 的 host，兼容升级上来的老用户。
+     */
+    private fun clearTokenIfHostChanged(newBase: String): Boolean {
+        val newHost = Bridge.hostOf(newBase) ?: return false
+        val knownHost = prefs.tokenHost.ifBlank {
+            val knownBase = prefs.lastGoodBase.ifBlank { prefs.baseUrl }
+            Bridge.hostOf(knownBase).orEmpty()
+        }
+        // 第一次配对（没有历史主机）不算换主机：此时 token 本来就该被新令牌覆盖
+        if (knownHost.isBlank()) return false
+        if (knownHost.equals(newHost, ignoreCase = true)) return false
+
+        prefs.token = ""
+        prefs.tokenHost = ""
+        BridgeLog.warn("连接目标主机变更（$knownHost → $newHost），旧令牌已作废")
+        return true
     }
 
     // ---------------------------------------------------------------- 设置
@@ -2067,8 +2294,16 @@ class MainActivity : AppCompatActivity() {
                 prefs.remoteBase = Bridge.normalize(it)
                 BridgeLog.info("异地通道已登记: $it")
             }
-            result.bases.firstOrNull()?.let { prefs.baseUrl = Bridge.normalize(it) }
-            if (result.token.isNotBlank()) prefs.token = result.token
+            val newBase = result.bases.firstOrNull()?.let { Bridge.normalize(it) }
+            if (newBase != null) {
+                // 同一套主机绑定判断：换取到的地址若换了主机，旧令牌不能带过去
+                clearTokenIfHostChanged(newBase)
+                prefs.baseUrl = newBase
+            }
+            if (result.token.isNotBlank()) {
+                prefs.token = result.token
+                prefs.tokenHost = Bridge.hostOf(newBase ?: prefs.baseUrl).orEmpty()
+            }
             toast(getString(R.string.code_ok))
             connect(manual = true)
         }

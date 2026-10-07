@@ -156,6 +156,12 @@ const EXAMPLE_IPS = new Set(['192.168.1.100']);
 {
   const bad = [
     [/\.apk$/i, '第三方安装包'], [/\.toolpkg$/i, '第三方工具包'],
+      // 安装包/可执行文件：既可能是第三方专有软件的再分发（许可证问题），也可能是夹带
+      // 了不该公开内容的二进制。这条是补漏 —— 曾有一个 Tailscale 官方安装包
+      // tailscale-setup-latest.exe 被提交进来而没被拦住。
+      [/\.(exe|msi|msix|dmg|pkg|deb|rpm|appimage)$/i, '安装包/可执行文件（第三方再分发 + 内容无法审查）'],
+      [/\.(zip|7z|rar|tar\.gz|tgz)$/i, '压缩包（易夹带二进制或隐私，需确认）'],
+      [/^pc\/tools\/downloads\//, '工具下载目录（第三方二进制）'],
     [/^pc\/tools\/bin\//, '第三方二进制（cloudflared 等）'],
     [/^phone\/toolpkg_cache\//, '第三方工具缓存'],
     [/^apk\//, '第三方安装包目录'],
@@ -180,6 +186,15 @@ const EXAMPLE_IPS = new Set(['192.168.1.100']);
   if (SHOW_ALL) {
     const ignoredBig = allFiles.filter((r) => isIgnored(r) && !wouldCommit.includes(r));
     console.log(`\n[信息] 被 .gitignore 正确忽略的本机文件 ${ignoredBig.length} 个（不会入库，无需处理）`);
+  }
+  // 兜底：大于 1MB 的待提交文件一律要人工确认。不设上限的话，二进制/数据文件很容易
+  // 在「只是顺手加一下」时混进仓库 —— 这类文件既审查不了内容，又会永久留在 git 历史里。
+  for (const r of wouldCommit) {
+    if (r.startsWith('phone/app-android/app/src/main/res/')) continue;
+    try {
+      const st = fs.statSync(path.join(ROOT, r));
+      if (st.size > 1024 * 1024) hits.push(r + '  (' + (st.size / 1024 / 1024).toFixed(2) + 'MB，超过 1MB 需确认)');
+    } catch { /* 文件不存在等情况忽略 */ }
   }
   hits.length ? fail('③ 禁止入仓的产物类型', hits) : pass('③ 禁止入仓的产物类型');
 }

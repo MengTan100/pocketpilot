@@ -477,7 +477,6 @@ window.__ModuleLoader__.load({
 							id: "phone-bridge-action",
 							priority: 10,
 							label: () => T("entry"),
-							locale: NS,
 						},
 						FooterAction
 					)
@@ -495,7 +494,6 @@ window.__ModuleLoader__.load({
 							id: "phone-bridge",
 							priority: 1,
 							label: () => T("entry"),
-							locale: NS,
 						},
 						PhoneBridgeSection
 					)
