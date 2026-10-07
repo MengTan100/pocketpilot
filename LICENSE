@@ -19,21 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-# 中文说明（非法律文本，仅供理解；以上英文原文为准）
-
-本项目采用 MIT 许可证。简单说，你可以：
-
-- 自由使用、修改、分发本项目，包括用于商业用途；
-- 把它合并进你自己的项目（闭源也可以）。
-
-你需要做的是：
-
-- 保留上面的版权声明与许可证原文；
-- **不得**用作者的名义为你的衍生品背书。
-
-本项目**不提供任何担保**。它让手机能远程指挥你电脑上的 DSH（等于远程执行能力），
-**请务必阅读 [DISCLAIMER.md](DISCLAIMER.md) 与 [SECURITY.md](SECURITY.md)**，
-自行评估并承担暴露风险。
