@@ -56,18 +56,14 @@ object BridgeLog {
 
     @Synchronized
     private fun append(level: String, message: String) {
-        // 令牌 = 电脑的远程执行权限（RCE）。日志的三个出口（logcat / 内存快照 /
-        // 日志文件）都可能被别人看到（用户导出反馈、崩溃上报、adb），
-        // 所以打码放在**唯一出口**这里统一做，而不是指望每个调用点都记得改。
-        val safe = Bridge.redact(message)
-        val line = "${stamp.format(Date())} [$level] $safe"
+        val line = "${stamp.format(Date())} [$level] $message"
         Log.println(
             when (level) {
                 "ERROR" -> Log.ERROR
                 "WARN" -> Log.WARN
                 else -> Log.DEBUG
             },
-            TAG, safe
+            TAG, message
         )
         synchronized(recent) {
             recent.addLast(line)
