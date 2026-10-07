@@ -95,3 +95,10 @@ phone/.env
 *.keystore
 signing.properties
 local.properties
+
+# 工具下载目录：third-party 安装包（如 tailscale-setup-*.exe）绝不能进仓库 ——
+# 既是第三方专有软件的再分发（许可证问题），其内容也无法审查。
+pc/tools/downloads/
+pc/tools/.curws
+*.exe
+*.msi
