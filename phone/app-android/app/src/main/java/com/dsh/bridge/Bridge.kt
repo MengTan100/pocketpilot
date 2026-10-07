@@ -70,83 +70,12 @@ object Bridge {
         return list.distinctBy { it.base }
     }
 
-    // ---------------------------------------------------------------- 主机白名单
-    //
-    // 为什么必须校验配对内容里的主机：
-    //   配对串里的令牌 = 电脑的远程执行权限（RCE），App 会把令牌作为 X-Bridge-Token
-    //   发给配对串里的地址，并把该地址导航进**带 DshApp 注入**的 WebView。
-    //   于是"随便一张二维码"就能同时做到两件事：骗走令牌 + 把攻击者控制的页面
-    //   放进高信任 WebView。所以地址不能是"任意主机"，只能是
-    //   "本次配对确实可能指向用户自己那台电脑"的那几类地址。
-
-    /** 回环、私有网段、链路本地、CGNAT、本机名与 Cloudflare 隧道。 */
-    private val HOST_LOOPBACK = Regex("^(127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|localhost|::1)$", RegexOption.IGNORE_CASE)
-    private val HOST_RFC1918 = Regex("^(10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3})$")
-    private val HOST_LINK_LOCAL = Regex("^169\\.254\\.\\d{1,3}\\.\\d{1,3}$")
-    /** CGNAT 100.64.0.0/10：运营商大内网，家里/公司经它中转时也算"自己的网络"。 */
-    private val HOST_CGNAT = Regex("^100\\.(6[4-9]|[7-9]\\d|1[01]\\d|12[0-7])\\.\\d{1,3}\\.\\d{1,3}$")
-    private val HOST_TUNNEL = Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.trycloudflare\\.com$", RegexOption.IGNORE_CASE)
-
-    /**
-     * 主机是否在白名单内。
-     *
-     * 只接受 IP 字面量与 tunnel 域名 —— 域名在这里没有意义（局域网里的电脑没有
-     * 可供公网解析的名字），放行任意域名等于白名单形同虚设。
-     * 末尾的点（FQDN 写法 `192.168.1.5.`）先归一化，避免用加一个点绕过正则。
-     */
-    fun isAllowedBridgeHost(host: String): Boolean {
-        val h = host.trim().trim('[', ']').trimEnd('.').trim().lowercase()
-        if (h.isEmpty()) return false
-        return HOST_LOOPBACK.matches(h) || HOST_RFC1918.matches(h) ||
-            HOST_LINK_LOCAL.matches(h) || HOST_CGNAT.matches(h) || HOST_TUNNEL.matches(h)
-    }
-
-    /**
-     * 从任意地址串里取主机名：没有 scheme 时按 `http://` 补一次再解析。
-     * 解析不出来时返回 null —— 拿不到主机就绝不能放行。
-     */
-    fun hostOf(base: String): String? = try {
-        val u = URL(normalize(base))
-        u.host?.takeIf { it.isNotBlank() }
-    } catch (t: Throwable) {
-        null
-    }
-
-    /**
-     * 两个地址是否指向同一台主机。
-     * 用于判断"令牌是发给谁的" —— 主机变了就绝不能把旧令牌带过去。
-     */
-    fun sameHost(a: String, b: String): Boolean {
-        if (a.isBlank() || b.isBlank()) return false
-        val ha = hostOf(a) ?: return false
-        val hb = hostOf(b) ?: return false
-        return ha.equals(hb, ignoreCase = true)
-    }
-
-    // ---------------------------------------------------------------- 令牌打码
-    //
-    // 为什么要在日志出口做：令牌 = 电脑的远程执行权限，而 logcat / 日志文件
-    // 都可能被第三方读取（崩溃上报、用户导出反馈、adb）。一旦令牌进了日志，
-    // 仅仅"不显示在界面上"是没用的。这里按"令牌出现的两种固定形态"打码：
-    //   ① 入口地址 …/dsh/?k=<token>
-    //   ② 配对串 dsh1|<host>|<token>
-
-    private val TOKEN_IN_QUERY = Regex("([?&]k=)[^&\\s]*")
-    private val TOKEN_IN_PAIRING = Regex("dsh1\\|[^|]*\\|[^|\\s]*")
-
-    /** 把字符串里的令牌部分替换为 ***，其它内容原样保留（便于排查）。 */
-    fun redact(s: String): String =
-        s.replace(TOKEN_IN_QUERY, "$1***").replace(TOKEN_IN_PAIRING, "dsh1|***|***")
-
     /**
      * 解析配对内容，兼容三种来源：
      *   1. 紧凑格式（当前）  dsh1|host:port|token
      *   2. 早期 JSON        {"base":"…","token":"…"} 或 {"bases":[…],"token":"…"}
      *   3. 裸地址           http://<PC的局域网IP>:3080
-     * 返回 (baseUrl, token?)；无法识别返回 null（沿用既有的"失败返回 null"，不抛异常）。
-     *
-     * 主机必须过白名单：配对内容来自二维码/文本，是**外部输入**，
-     * 而它决定"令牌发给谁"和"WebView 导航到哪"，见上面的 HOST_* 注释。
+     * 返回 (baseUrl, token?)；无法识别返回 null。
      */
     fun parsePairing(raw: String): Pair<String, String?>? {
         val text = raw.trim()
@@ -156,7 +85,6 @@ object Bridge {
             val parts = text.split('|')
             val host = parts.getOrNull(1)?.trim().orEmpty()
             if (host.isEmpty()) return null
-            if (!isAllowedBridgeHost(hostOf(host).orEmpty())) return null
             val token = parts.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
             return normalize(host) to token
         }
@@ -170,7 +98,6 @@ object Bridge {
                     if (arr != null && arr.length() > 0) base = arr.optString(0)
                 }
                 if (base.isBlank()) return null
-                if (!isAllowedBridgeHost(hostOf(base).orEmpty())) return null
                 val token = json.optString("token").takeIf { it.isNotBlank() }
                 normalize(base) to token
             } catch (t: Throwable) {
@@ -178,10 +105,7 @@ object Bridge {
             }
         }
 
-        if (text.startsWith("http") || text.contains(":")) {
-            if (!isAllowedBridgeHost(hostOf(text).orEmpty())) return null
-            return normalize(text) to null
-        }
+        if (text.startsWith("http") || text.contains(":")) return normalize(text) to null
         return null
     }
 
