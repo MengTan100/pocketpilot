@@ -1,0 +1,323 @@
+html[data-dsh-compact="true"] [role="dialog"][class*="_panel"],
+html[data-dsh-compact="true"] [role="dialog"][class*="_panel"] * {
+  box-sizing: border-box !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"][class*="_panel"] {
+  display: flex !important;
+  flex-direction: column !important;
+  width: calc(100vw - 16px) !important;
+  max-width: calc(100vw - 16px) !important;
+  height: calc(100vh - 16px) !important;
+  max-height: calc(100vh - 16px) !important;
+  border-radius: 12px !important;
+}
+
+/* The desktop rail becomes a horizontally scrollable top navigation. */
+html[data-dsh-compact="true"] [role="dialog"] > nav[class*="_nav"] {
+  display: flex !important;
+  flex: none !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: 54px !important;
+  gap: 8px !important;
+  padding: 8px !important;
+  overflow: hidden !important;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_navTitle"] {
+  flex: none !important;
+  padding: 0 4px !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  white-space: nowrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_navList"] {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: row !important;
+  min-width: 0 !important;
+  gap: 4px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_navCell"] {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 34px !important;
+  padding: 6px 10px !important;
+  border-radius: 9px !important;
+  white-space: nowrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_navLabel"] {
+  white-space: nowrap !important;
+  text-overflow: clip !important;
+}
+
+/* Content takes the remaining height and uses the full narrow width. */
+html[data-dsh-compact="true"] [role="dialog"] > div[class*="_content"] {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] > div[class*="_content"] > div[class*="_header"] {
+  flex: none !important;
+  height: 42px !important;
+  padding: 7px 8px 5px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_options"] {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 8px 12px 12px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_options"] > * {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_section"] {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] h1,
+html[data-dsh-compact="true"] [role="dialog"] h2,
+html[data-dsh-compact="true"] [role="dialog"] h3 {
+  max-width: 100% !important;
+  line-height: 1.35 !important;
+  overflow-wrap: anywhere !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] p,
+html[data-dsh-compact="true"] [role="dialog"] label {
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] input,
+html[data-dsh-compact="true"] [role="dialog"] select,
+html[data-dsh-compact="true"] [role="dialog"] textarea {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Models: keep provider rows readable and collapse secondary fields to one
+   column; the two primary model fields remain side by side with icon actions. */
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rows"] {
+  gap: 6px !important;
+  margin-top: 6px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rowCard"] {
+  gap: 8px !important;
+  padding: 10px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rowHead"] {
+  flex-wrap: wrap !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rowIdentity"] {
+  flex: 1 1 120px !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rowName"] {
+  min-width: 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_rowActions"] {
+  flex: 0 1 auto !important;
+  flex-wrap: wrap !important;
+  margin-left: auto !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_editor"],
+html[data-dsh-compact="true"] [role="dialog"] [class*="_addCard"],
+html[data-dsh-compact="true"] [role="dialog"] [class*="_setupCard"] {
+  gap: 10px !important;
+  padding: 10px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_editorHeader"],
+html[data-dsh-compact="true"] [role="dialog"] [class*="_editorActions"] {
+  flex-wrap: wrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_editorActions"] > button {
+  flex: 1 1 110px !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_addActions"] {
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_addActions"] > button {
+  flex: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_modelListHead"] {
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_modelRow"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px 28px !important;
+  gap: 5px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_modelRow"] > input {
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_modelAdvanced"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 6px !important;
+  padding: 8px 0 2px !important;
+}
+
+/* Plugins: tabs scroll horizontally and plugin/inventory cards never form a
+   second narrow column. */
+html[data-dsh-compact="true"] [role="dialog"] [role="tablist"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  max-width: 100% !important;
+  gap: 14px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [role="tab"] {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [role="tabpanel"] {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] ul[class*="_cards"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 8px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] li[data-plugin-entry] {
+  grid-column: 1 / -1 !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_cardContent"] {
+  min-height: 48px !important;
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_cardTitle"] {
+  flex: 1 1 140px !important;
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_cardTrailing"] {
+  max-width: 100% !important;
+  margin-left: auto !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_cardDetails"] {
+  padding: 8px 12px 10px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_details"] {
+  grid-template-columns: minmax(64px, auto) minmax(0, 1fr) !important;
+  gap: 5px 8px !important;
+}
+
+/* Configurable plugin cards and their fields. */
+html[data-dsh-compact="true"] [role="dialog"] [class*="_card"] [class*="_header"] {
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  padding: 12px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_headText"] {
+  flex: 1 1 150px !important;
+  min-width: 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_card"] [class*="_body"] {
+  margin: 0 12px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_field"] {
+  min-width: 0 !important;
+  padding: 10px 0 !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_field"] [class*="_head"] {
+  flex-wrap: wrap !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_field"] input {
+  width: 100% !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_footer"] {
+  flex-wrap: wrap !important;
+  justify-content: stretch !important;
+  gap: 6px !important;
+}
+
+html[data-dsh-compact="true"] [role="dialog"] [class*="_footer"] > button {
+  flex: 1 1 110px !important;
+  min-width: 0 !important;
+}
+
+@media (max-width: 380px) {
+  html[data-dsh-compact="true"] [role="dialog"][class*="_panel"] {
+    width: calc(100vw - 8px) !important;
+    max-width: calc(100vw - 8px) !important;
+    height: calc(100vh - 8px) !important;
+    max-height: calc(100vh - 8px) !important;
+    border-radius: 10px !important;
+  }
+
+  html[data-dsh-compact="true"] [role="dialog"] [class*="_options"] {
+    padding-right: 8px !important;
+    padding-left: 8px !important;
+  }
+
+  html[data-dsh-compact="true"] [role="dialog"] [class*="_navCell"] {
+    padding-right: 8px !important;
+    padding-left: 8px !important;
+  }
+}

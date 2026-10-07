@@ -1,0 +1,43 @@
+{
+  "name": "dsh-plugin-phone-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "手机端连接：在侧栏底部（紧挨设置）加入「手机连接」入口，点击居中弹出配对二维码；设置面板里保留同一区段作为二级入口",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2"
+  },
+  "license": "MIT",
+  "_watermark": {
+    "project": "dsh-phone-bridge",
+    "origin": "8db5189c93",
+    "license": "MIT",
+    "notice": "见 WATERMARK.md"
+  }
+}

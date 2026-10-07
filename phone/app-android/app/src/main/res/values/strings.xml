@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:3d7959fe61​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<!--
+  默认语言 = 英文（Android 惯例：values/ 为兜底语言）。
+  其它语言放 values-<lang>/strings.xml，缺键会回落到这里。
+  语言跟随系统自动选择；用户也可在"设置 → 语言"里手动指定（一次性全局切换）。
+-->
+<resources>
+    <!--
+      应用名：独立品牌，**不使用 DeepSeek 的产品名**（那属于他人的商标，
+      直接当自己的应用名不合适）。与 DSH 的关系放在描述里做指代性使用即可。
+    -->
+    <string name="app_name">PocketPilot</string>
+
+    <!-- 入口页 -->
+    <string name="welcome_title">PocketPilot · Drive DeepSeek Harness from your phone</string>
+    <string name="welcome_desc">Run tasks on your computer, watch progress and send instructions from your phone.\nThree ways to connect: USB cable, same Wi-Fi, or across networks.</string>
+    <string name="welcome_hint">First time? Tap “Scan QR code” — the pairing page on your computer shows a QR code; just scan it, no need to copy any address or token.\n\nAlready plugged in or on the same Wi-Fi? Tap “Enter” and it will find your computer automatically.</string>
+    <string name="btn_enter">Enter</string>
+    <string name="entry_last_target">Last connected: %1$s</string>
+    <string name="entry_no_pairing">Not paired yet — scan the QR code or enter a pairing code first.</string>
+    <string name="btn_scan_pair">Scan QR code</string>
+    <string name="btn_code_pair">Pairing code</string>
+    <string name="btn_settings">Settings</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_about">About this project</string>
+    <string name="settings_star">Star on GitHub</string>
+    <string name="settings_manual">Bridge address (manual)</string>
+    <string name="settings_close">Close</string>
+
+    <!-- 语言 -->
+    <string name="language_title">Language</string>
+    <string name="language_system">Follow system</string>
+    <string name="language_note">Applies to the whole app at once.</string>
+
+    <!-- 关于 -->
+    <string name="about_title">About %1$s</string>
+    <string name="about_body">Command a live DeepSeek Harness session on your PC right from your phone: launch tasks on the desktop, then follow progress, send instructions and read results on the phone.\n\n• Three connection paths: USB cable, same Wi-Fi, or across networks (Cloudflare tunnel)\n• Desktop DSH keeps listening on loopback only — the bridge handles authentication, proxying, keep-alive and reconnection\n• Your phone needs no extra app and no root
+• Independent third-party tool, not affiliated with or endorsed by DeepSeek\n\nIf this project helps you, a star on GitHub is much appreciated.</string>
+    <string name="star_hint">Open the GitHub repository to give it a star?</string>
+    <string name="star_failed">Could not open a browser. Please visit manually:\n%1$s</string>
+    <string name="project_repo_label">GitHub repository</string>
+
+    <!-- 配对 / 连接 -->
+    <string name="btn_reload">Reconnect</string>
+    <string name="btn_exit">Exit</string>
+    <string name="exit_confirm">Disconnect from the computer and return to the entry page?</string>
+    <string name="btn_toggle_desc">Collapse or expand connection status</string>
+    <string name="btn_rail_desc">Collapse or expand the left sidebar</string>
+    <string name="btn_direct_connect">Enter</string>
+    <string name="btn_manual">Enter address manually</string>
+    <string name="dialog_code_title">Enter the pairing code shown on your computer</string>
+    <string name="dialog_code_hint">8-character code, e.g. CK8V7TM2</string>
+    <string name="code_bad">Wrong pairing code — please check your computer screen</string>
+    <string name="code_ok">Paired. Connecting…</string>
+    <string name="code_rate_limited">Too many attempts. Please try again later.</string>
+    <string name="code_need_bridge">Please run start-bridge.bat on your computer first</string>
+    <string name="pc_dsh_started">Desktop DSH started. Reconnecting…</string>
+    <string name="pc_dsh_stopped">Desktop DSH was closed. Please reopen it on your computer.</string>
+    <string name="status_pc_dsh_off">Desktop DSH is not running</string>
+    <string name="auth_failed">Authentication kept failing. Please restart DSH on your computer and try again.</string>
+    <string name="pick_file_title">Add file</string>
+    <string name="pick_file_phone">Choose from phone (upload to computer)</string>
+    <string name="pick_file_pc">Choose from computer (opens the desktop file dialog)</string>
+    <string name="pick_file_failed">Could not open the file picker</string>
+    <string name="upload_started">Uploading to computer…</string>
+    <string name="upload_ok">Uploaded — the path has been written into the composer</string>
+    <string name="upload_failed">Upload failed. Please check the connection to your computer.</string>
+    <string name="pc_pick_waiting">Please choose a file on your computer…</string>
+    <string name="heal_reconnected">Connection recovered automatically</string>
+    <string name="heal_page_frozen">Page was unresponsive — refreshed automatically</string>
+    <string name="heal_rebuilding">Connection kept failing — rebuilding the page…</string>
+    <string name="connect_busy">Connecting, please wait…</string>
+    <string name="scan_prompt">Put the QR code from your computer screen inside the frame</string>
+    <string name="pair_ok">Paired. Connecting…</string>
+    <string name="pair_bad_qr">This QR code was not recognised. Aim at the pairing QR code on your computer, or use “Enter” instead.</string>
+    <string name="dialog_manual_title">Bridge address (manual)</string>
+    <string name="dialog_manual_hint">e.g. 192.168.1.100:3080</string>
+
+    <!-- 状态 -->
+    <string name="status_idle">Not connected</string>
+    <string name="status_searching">Looking for your computer…</string>
+    <string name="status_ready">Connected</string>
+    <string name="status_desktop">Desktop</string>
+    <string name="status_bridge">Bridge</string>
+    <string name="status_reconnecting">Connection lost, reconnecting (attempt %1$d)</string>
+    <string name="err_no_channel">Computer not found. Please check: 1) start-bridge.bat is running on your computer; 2) the USB cable is connected or both devices are on the same Wi-Fi; 3) or use QR pairing.</string>
+    <string name="err_handshake">Handshake failed. Please retry or pair again.</string>
+
+    <!-- 同步状态胶囊：只在"补同步中 / 刚重连 / 未同步"时短暂出现，正常时隐藏 -->
+    <string name="sync_chip_desc">Conversation sync status</string>
+    <string name="sync_state_synced">Synced</string>
+    <string name="sync_state_syncing">Resyncing…</string>
+    <string name="sync_state_reconnected">Reconnected</string>
+    <string name="sync_state_stale">Out of sync · tap to recover</string>
+    <string name="sync_resync_started">Resyncing the conversation…</string>
+
+    <!--
+      Disclaimer and notice: must be accepted on first run, re-openable from Settings.
+      正文不放在这里 —— 条款要求**中英双语同时展示**（不随界面语言变化），
+      所以正文写在 MainActivity 的 TERMS_SECTIONS 里，由代码排版（标题加粗、编号分段）。
+      这里只放按钮与标签。
+    -->
+    <string name="terms_title">Disclaimer &amp; Notice</string>
+    <string name="terms_full">Full text</string>
+    <string name="terms_accept">I have read and agree</string>
+    <string name="terms_decline">Exit</string>
+    <string name="terms_close">Close</string>
+    <string name="terms_settings_entry">Disclaimer &amp; Notice</string>
+    <string name="terms_version_note">Notice version %1$d · acceptance is required before the first connection.</string>
+
+    <!-- 仓库地址：不翻译，改这里即可全局生效 -->
+    <string name="project_repo_url" translatable="false">https://github.com/</string>
+
+    <!--
+      构建指纹（水印第 4 层）：不显示在任何界面上，但会编进 APK 的资源表。
+      作用：若有人打包分发衍生版本，可用 aapt2 dump resources 或直接搜字符串确认出处。
+      详见 WATERMARK.md；改这里要同步改 tools/watermark-lib.mjs 的 PROJECT_ID / PAYLOAD_TEXT。
+    -->
+    <string name="project_origin_marker" translatable="false">dsh-phone-bridge/DSPB2026 · MIT · 见 WATERMARK.md</string>
+</resources>

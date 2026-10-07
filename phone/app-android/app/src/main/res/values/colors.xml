@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:105deab036​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<resources>
+    <!-- 自适应图标底色：与源图（黑鲸鱼 + 纯白底）的白底取同色，
+         这样前景鲸鱼的抗锯齿边缘与底色无缝衔接，不会出现灰边。 -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: MIT
+# DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+# wm:f39380221e​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+# 手机端连接插件（组合包 patch 层）
+#
+# DSH 的加载顺序：bundle 的 patch 先应用，profile 自己的 cordis.patch.yml 随后，
+# 再是 --patch 覆盖层。同一 id 的后续层会覆盖先前层的整段 config。
+#
+# ⚠️ 关键语法：patch 里裸写的 `- id: xxx` 是**覆盖**已存在的条目（官方 bundle 的
+# patch 全是这种形态，且只写 id + config，不写 name）。要**新增**插件必须包在
+# `- insert:` 下面。早先写成裸条目，被当成"覆盖一个不存在的 id"，于是被静默忽略，
+# 插件始终不出现 —— 这就是之前的坑。
+- insert:
+    - id: phone-bridge
+      name: "dsh-plugin-phone-bridge"
