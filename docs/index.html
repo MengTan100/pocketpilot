@@ -1,0 +1,316 @@
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:3abfd2eaf8​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PocketPilot — 用手机指挥电脑上的 DeepSeek Harness</title>
+<meta name="description" content="PocketPilot：手机端 App + 电脑端 DSH 插件，用手机指挥电脑上的 DeepSeek Harness。开源、MIT、独立第三方工具。">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1020'/%3E%3Crect x='10' y='6' width='12' height='20' rx='3' fill='none' stroke='%235b8def' stroke-width='2'/%3E%3Cline x1='14' y1='22' x2='18' y2='22' stroke='%235b8def' stroke-width='2'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #fff; --ink: #12161f; --muted: #5b6478; --line: #e3e6ee;
+    --brand: #2f6bff; --brand-ink: #fff; --accent: #12b981; --warn-bg: #fff8e6; --warn-line: #f0d79a;
+    --hero: linear-gradient(160deg, #0b1020 0%, #16204a 55%, #1d2a63 100%);
+    --code-bg: #0f1424; --code-ink: #d7e0ff;
+    --radius: 14px; --shadow: 0 10px 30px rgba(18, 22, 31, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0f17; --card: #141926; --ink: #eef1f8; --muted: #9aa4bd; --line: #26304a;
+      --warn-bg: #2a2415; --warn-line: #5c4d21; --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+  .hero { background: var(--hero); color: #fff; padding: 56px 0 64px; }
+  .hero .wrap { display: flex; flex-direction: column; gap: 18px; }
+  .brandline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .logo { width: 40px; height: 40px; flex: 0 0 auto; }
+  h1 { font-size: 34px; margin: 0; letter-spacing: .3px; }
+  .tag { font-size: 17px; color: #c3cdf0; max-width: 640px; margin: 0; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 12px; padding: 3px 9px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px; color: #dbe3ff; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 10px;
+    font-weight: 600; font-size: 15px; border: 1px solid transparent; transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0,0,0,.22); }
+  .btn-primary { background: var(--brand); color: var(--brand-ink); }
+  .btn-ghost { background: rgba(255,255,255,.08); color: #fff; border-color: rgba(255,255,255,.3); }
+  .btn-star { background: #f5b301; color: #3b2c00; }
+  main { padding: 40px 0 60px; display: flex; flex-direction: column; gap: 26px; }
+  section.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px 24px 22px; }
+  h2 { font-size: 21px; margin: 0 0 14px; display: flex; align-items: center; gap: 9px; }
+  h2 .n {
+    width: 26px; height: 26px; border-radius: 8px; background: var(--brand); color: #fff;
+    font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  }
+  h3 { font-size: 16px; margin: 18px 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  ol, ul { margin: 8px 0 8px 20px; padding: 0; }
+  li { margin: 6px 0; }
+  code.inline { background: rgba(47,107,255,.1); color: var(--brand); padding: 2px 6px; border-radius: 5px; font-size: 13.5px; }
+  .code { position: relative; margin: 10px 0 4px; }
+  .code pre {
+    margin: 0; background: var(--code-bg); color: var(--code-ink); padding: 14px 92px 14px 16px;
+    border-radius: 10px; overflow-x: auto; font: 13.5px/1.6 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  .code .copy {
+    position: absolute; top: 9px; right: 9px; background: rgba(255,255,255,.12); color: #fff;
+    border: 1px solid rgba(255,255,255,.22); border-radius: 7px; padding: 5px 11px; font-size: 12.5px; cursor: pointer;
+  }
+  .code .copy:hover { background: rgba(255,255,255,.22); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .tile { border: 1px solid var(--line); border-radius: 11px; padding: 14px; }
+  .tile h4 { margin: 0 0 6px; font-size: 15px; }
+  .tile p { margin: 0; font-size: 14px; color: var(--muted); }
+  .disclaimer { background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .disclaimer h2 .n { background: #d99b00; }
+  .kv { font: 13px/1.7 "SFMono-Regular", Consolas, monospace; word-break: break-all; color: var(--muted); }
+  footer { border-top: 1px solid var(--line); padding: 26px 0 44px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-direction: column; gap: 8px; }
+  .lang { position: absolute; top: 16px; right: 20px; }
+  .lang button {
+    background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.3);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .hero { position: relative; }
+  .only-zh, .only-en { display: none; }
+  html[data-lang="zh"] .only-zh { display: block; }
+  html[data-lang="en"] .only-en { display: block; }
+  html[data-lang="zh"] span.only-zh, html[data-lang="en"] span.only-en { display: inline; }
+  @media (max-width: 560px) {
+    h1 { font-size: 27px; } .hero { padding: 44px 0 50px; } section.card { padding: 18px; }
+    .code pre { padding-right: 16px; } .code .copy { position: static; margin-top: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="lang"><button id="langBtn" type="button">English</button></div>
+  <div class="wrap">
+    <div class="brandline">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.25)"/>
+        <rect x="10" y="6" width="12" height="20" rx="3" fill="none" stroke="#7ea6ff" stroke-width="2"/>
+        <line x1="14" y1="22" x2="18" y2="22" stroke="#7ea6ff" stroke-width="2"/>
+      </svg>
+      <h1>PocketPilot</h1>
+      <span class="badge">MIT</span>
+      <span class="badge">Android 8.0+</span>
+      <span class="badge">v0.4.0</span>
+    </div>
+
+    <p class="tag only-zh">用手机指挥电脑上的 <strong>DeepSeek Harness</strong>：手机端 App + 电脑端 DSH 插件，扫码配对，共享同一个真实会话。</p>
+    <p class="tag only-en">Drive <strong>DeepSeek Harness</strong> on your computer from your phone: an Android app plus a DSH plugin, paired by QR code, sharing one real session.</p>
+
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span class="only-zh">下载 APK</span><span class="only-en">Download APK</span>
+      </a>
+      <a class="btn btn-star" href="https://github.com/MengTan100/pocketpilot">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="m12 17.3-6.2 3.7 1.6-7-5.4-4.7 7.2-.6L12 2l2.8 6.7 7.2.6-5.4 4.7 1.6 7z"/></svg>
+        <span class="only-zh">给个 Star ⭐</span><span class="only-en">Star this project ⭐</span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/MengTan100/pocketpilot/releases">
+        <span class="only-zh">所有发布版本</span><span class="only-en">All releases</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="card">
+    <h2><span class="n">1</span><span class="only-zh">手机端：安装 App</span><span class="only-en">Phone: install the app</span></h2>
+    <p class="only-zh">下载上面的 <code class="inline">app-release.apk</code> 直接安装。首次启动会让你阅读并同意免责声明。</p>
+    <p class="only-en">Download <code class="inline">app-release.apk</code> above and install it. On first launch it asks you to read and accept the disclaimer.</p>
+    <div class="grid">
+      <div class="tile">
+        <h4 class="only-zh">扫二维码配对</h4><h4 class="only-en">Pair by QR code</h4>
+        <p class="only-zh">电脑端显示二维码，手机扫一下就连上，不用手输地址。</p>
+        <p class="only-en">The desktop shows a QR code; scan it and you are connected — no manual address typing.</p>
+      </div>
+      <div class="tile">
+        <h4 class="only-zh">也可手动配对</h4><h4 class="only-en">Or pair manually</h4>
+        <p class="only-zh">同一局域网内可手输地址与配对码；异地可用隧道。</p>
+        <p class="only-en">On the same LAN you can type the address and pairing code; use a tunnel when remote.</p>
+      </div>
+      <div class="tile">
+        <h4 class="only-zh">自动重连</h4><h4 class="only-en">Auto reconnect</h4>
+        <p class="only-zh">断线自动重连并显示连接状态，时钟偏差自动校正。</p>
+        <p class="only-en">Reconnects automatically with a status indicator, and corrects clock skew.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">2</span><span class="only-zh">电脑端：安装 DSH 插件</span><span class="only-en">Desktop: install the DSH plugin</span></h2>
+    <p class="only-zh">直接填<strong>仓库地址</strong>安装，装好会自动启用（<code class="inline">dsh plugin</code> 是 pnpm 的封装，装完会把声明了 <code class="inline">dsh.bundle</code> 的依赖并入 profile 的 layers）：</p>
+    <p class="only-en">Install straight from the <strong>repository address</strong>; it is enabled automatically (<code class="inline">dsh plugin</code> wraps pnpm and folds any dependency declaring <code class="inline">dsh.bundle</code> into the profile's layers):</p>
+    <div class="code">
+      <pre><code>dsh plugin add github:MengTan100/pocketpilot</code></pre>
+      <button class="copy" type="button" data-copy="dsh plugin add github:MengTan100/pocketpilot">复制</button>
+    </div>
+    <p class="muted only-zh">若提示 profile 不对，补上你的 profile 名，例如：<code class="inline">dsh plugin --profile desktop add github:MengTan100/pocketpilot</code></p>
+    <p class="muted only-en">If it complains about the profile, pass yours explicitly: <code class="inline">dsh plugin --profile desktop add github:MengTan100/pocketpilot</code></p>
+
+    <h3 class="only-zh">装不上时（网络不稳 / 想离线）</h3>
+    <h3 class="only-en">If that fails (flaky network / you prefer offline)</h3>
+    <p class="only-zh">下载发布页里的 <code class="inline">dsh-plugin-phone-bridge-0.4.0.zip</code>，解压后用本地路径安装：</p>
+    <p class="only-en">Download <code class="inline">dsh-plugin-phone-bridge-0.4.0.zip</code> from the release page, unzip it, then install by local path:</p>
+    <div class="code">
+      <pre><code>dsh plugin add "C:\你解压的位置\dsh-plugin-phone-bridge"</code></pre>
+      <button class="copy" type="button" data-copy="dsh plugin add &quot;C:\你解压的位置\dsh-plugin-phone-bridge&quot;">复制</button>
+    </div>
+    <p class="muted only-zh">插件界面文字跟随系统 / DSH 的语言设置（简体中文 / English）。</p>
+    <p class="muted only-en">The plugin UI follows your system / DSH language (Simplified Chinese / English).</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">3</span><span class="only-zh">启动桥接并配对</span><span class="only-en">Start the bridge and pair</span></h2>
+    <p class="only-zh">在电脑上运行桥接（首次会显示配对二维码）：</p>
+    <p class="only-en">Run the bridge on your computer (it shows the pairing QR code on first run):</p>
+    <div class="code">
+      <pre><code>pc\start-bridge.bat</code></pre>
+      <button class="copy" type="button" data-copy="pc\start-bridge.bat">复制</button>
+    </div>
+    <p class="only-zh">然后在 DSH 侧栏底部点「手机连接 / Phone link」，用手机扫描弹窗里的二维码即可。</p>
+    <p class="only-en">Then click “Phone link” at the bottom of the DSH sidebar and scan the QR code in the dialog with your phone.</p>
+  </section>
+
+  <section class="card disclaimer">
+    <h2><span class="n">!</span><span class="only-zh">免责与安全声明（请务必阅读）</span><span class="only-en">Disclaimer and safety notice (please read)</span></h2>
+    <div class="only-zh">
+      <ul>
+        <li><strong>独立第三方工具</strong>：本项目与 DeepSeek 官方<strong>没有任何隶属、合作或背书关系</strong>；“DeepSeek Harness”仅用于说明兼容对象。</li>
+        <li><strong>它等于把电脑的远程执行能力交给手机</strong>：请在可信网络中使用，不要把配对二维码或地址转发给他人。</li>
+        <li>本项目<strong>按“现状”提供，不提供任何担保</strong>；因使用造成的任何损失由使用者自行承担。完整条款见
+          <a href="https://github.com/MengTan100/pocketpilot/blob/main/DISCLAIMER.md">DISCLAIMER.md</a> 与
+          <a href="https://github.com/MengTan100/pocketpilot/blob/main/SECURITY.md">SECURITY.md</a>。</li>
+        <li><strong>隐私</strong>：App 不收集、不上传任何个人数据；所有数据只在你自己的电脑与手机之间流动。</li>
+      </ul>
+    </div>
+    <div class="only-en">
+      <ul>
+        <li><strong>Independent third-party tool</strong>: this project has <strong>no affiliation, partnership or endorsement</strong> from DeepSeek. “DeepSeek Harness” is named only to state compatibility.</li>
+        <li><strong>It hands remote-execution power over your computer to your phone.</strong> Use it on a network you trust and never forward the pairing QR code or address.</li>
+        <li>Provided <strong>“as is”, without warranty of any kind</strong>; you bear any loss arising from its use. Full terms:
+          <a href="https://github.com/MengTan100/pocketpilot/blob/main/DISCLAIMER.md">DISCLAIMER.md</a>,
+          <a href="https://github.com/MengTan100/pocketpilot/blob/main/SECURITY.md">SECURITY.md</a>.</li>
+        <li><strong>Privacy</strong>: the app collects and uploads nothing; data only flows between your own computer and phone.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">✓</span><span class="only-zh">校验下载是否可信</span><span class="only-en">Verify your download</span></h2>
+    <p class="only-zh">发布包用 <strong>APK Signature Scheme v2</strong> 签名，且不含 <code class="inline">android:debuggable</code>（WebView 远程调试只在 debug 构建里开启）。</p>
+    <p class="only-en">Release builds are signed with <strong>APK Signature Scheme v2</strong> and carry no <code class="inline">android:debuggable</code> flag (WebView remote debugging is enabled only in debug builds).</p>
+    <p class="muted only-zh">首次发布（v0.4.0）的签名证书 SHA-256：</p>
+    <p class="muted only-en">Signing certificate SHA-256 for the first release (v0.4.0):</p>
+    <p class="kv">f3aee86b9faf53085d66dd5215bb81bc1c39dc7eefd00994549fce02e5992e3f</p>
+    <p class="muted only-zh">校验命令：</p><p class="muted only-en">Verify with:</p>
+    <div class="code">
+      <pre><code>apksigner verify --print-certs app-release.apk</code></pre>
+      <button class="copy" type="button" data-copy="apksigner verify --print-certs app-release.apk">复制</button>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <span class="only-zh">本项目采用 MIT 许可证 · 原创水印与出处见 </span>
+      <span class="only-en">MIT licensed · watermark and provenance: </span>
+      <a href="https://github.com/MengTan100/pocketpilot/blob/main/WATERMARK.md">WATERMARK.md</a>
+      <span class="only-zh"> · 第三方组件声明见 </span><span class="only-en"> · third-party notices: </span>
+      <a href="https://github.com/MengTan100/pocketpilot/blob/main/THIRD-PARTY-NOTICES.md">THIRD-PARTY-NOTICES.md</a>
+    </div>
+    <div>
+      <a href="https://github.com/MengTan100/pocketpilot">GitHub</a> ·
+      <a href="https://github.com/MengTan100/pocketpilot/releases">Releases</a> ·
+      <a href="https://github.com/MengTan100/pocketpilot/issues">Issues</a>
+    </div>
+    <div class="muted only-zh">PocketPilot 是独立第三方项目，与 DeepSeek 官方无隶属关系。</div>
+    <div class="muted only-en">PocketPilot is an independent third-party project, not affiliated with DeepSeek.</div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var dict = {
+    zh: { lang: 'English', copy: '复制', copied: '已复制' },
+    en: { lang: '中文', copy: 'Copy', copied: 'Copied' }
+  };
+  var html = document.documentElement;
+
+  function pick() {
+    try {
+      var list = [].concat(navigator.languages || [], navigator.language || []);
+      for (var i = 0; i < list.length; i++) {
+        var s = String(list[i] || '').toLowerCase();
+        if (s.indexOf('zh') === 0) return 'zh';
+        if (s.indexOf('en') === 0) return 'en';
+      }
+    } catch (e) {}
+    return 'zh';
+  }
+
+  function apply(lang) {
+    html.setAttribute('data-lang', lang);
+    html.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');
+    var btn = document.getElementById('langBtn');
+    btn.textContent = dict[lang].lang;
+    var copies = document.querySelectorAll('.copy');
+    for (var i = 0; i < copies.length; i++) copies[i].textContent = dict[lang].copy;
+  }
+
+  var current = pick();
+  apply(current);
+
+  document.getElementById('langBtn').addEventListener('click', function () {
+    current = current === 'zh' ? 'en' : 'zh';
+    apply(current);
+  });
+
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = btn.getAttribute('data-copy') || '';
+      var done = function () {
+        btn.textContent = dict[current].copied;
+        setTimeout(function () { btn.textContent = dict[current].copy; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta); done();
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
