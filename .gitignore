@@ -89,3 +89,9 @@ phone/install-step3.sh
 phone/set-lan-env.js
 phone/.env
 .env
+
+# 签名密钥与口令：绝不能进仓库（泄露 = 别人能冒充你发布"官方"更新）
+*.jks
+*.keystore
+signing.properties
+local.properties

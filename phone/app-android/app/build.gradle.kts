@@ -18,11 +18,42 @@ android {
         versionName = "0.4.0"
     }
 
+    /**
+     * Release 签名配置：从**仓库外**的 ~/.gradle/gradle.properties 读密钥位置与口令。
+     *
+     * 为什么这么做：
+     *   1) 签名密钥与口令绝不能进仓库（泄露 = 别人能冒充你发布"官方"更新）；
+     *   2) 开源用户没有你的密钥也必须能构建 —— 所以这里**找不到就跳过签名**，
+     *      构建出未签名的 release APK（可自行签名），而不是让构建直接失败。
+     * 本机要出可发布的包时，在这四个属性写进 ~/.gradle/gradle.properties：
+     *   POCKETPILOT_STORE_FILE / POCKETPILOT_STORE_PASSWORD /
+     *   POCKETPILOT_KEY_ALIAS   / POCKETPILOT_KEY_PASSWORD
+     */
+    val signingProps = listOf(
+        "POCKETPILOT_STORE_FILE", "POCKETPILOT_STORE_PASSWORD",
+        "POCKETPILOT_KEY_ALIAS", "POCKETPILOT_KEY_PASSWORD",
+    ).associateWith { providers.gradleProperty(it).orNull }
+    val signingReady = signingProps.values.all { !it.isNullOrBlank() } &&
+        file(signingProps["POCKETPILOT_STORE_FILE"]!!).exists()
+
+    signingConfigs {
+        if (signingReady) {
+            create("release") {
+                storeFile = file(signingProps["POCKETPILOT_STORE_FILE"]!!)
+                storePassword = signingProps["POCKETPILOT_STORE_PASSWORD"]
+                keyAlias = signingProps["POCKETPILOT_KEY_ALIAS"]
+                keyPassword = signingProps["POCKETPILOT_KEY_PASSWORD"]
+            }
+        }
+    }
+
     buildTypes {
         release {
             // 首版先不混淆：便于按日志排查，后续再开
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // 有密钥就签名；没有就出未签名包（开源用户自行签名）
+            if (signingReady) signingConfig = signingConfigs.getByName("release")
         }
         debug {
             // 刻意不加 applicationIdSuffix：

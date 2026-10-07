@@ -533,7 +533,6 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 
 - 桥接专用 profile 为 `~/.dsh/profiles/bridge`，**与桌面端 profile 隔离**，桌面端行为不变。
 
-<!-- wm:5df33da04b​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​ · PocketPilot 原创项目 · 见 WATERMARK.md -->
 
 ---
 
@@ -547,3 +546,30 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 本项目**不提供任何担保**。它让手机能远程指挥你电脑上的 DSH（等于远程执行能力），
 请务必阅读 [DISCLAIMER.md](DISCLAIMER.md)（免责与安全声明）与 [SECURITY.md](SECURITY.md)（安全与隐私规范），
 自行评估并承担暴露风险。
+
+---
+
+## 下载与校验
+
+正式包在 [Releases](https://github.com/MengTan100/pocketpilot/releases) 里发布，包含两个东西：
+
+| 文件 | 用途 |
+|---|---|
+| `app-release.apk` | 手机端 App（Android 8.0+，包名 `com.dsh.bridge`） |
+| `dsh-plugin-phone-bridge-*.zip` | 电脑端 DSH 插件（与 App 配套；解压后按 README 的安装说明接入 DSH） |
+
+**建议核对签名**，确认下载到的包确实来自本项目的发布者：
+
+- 证书 SHA-256：`f3aee86b9faf53085d66dd5215bb81bc1c39dc7eefd00994549fce02e5992e3f`
+- 校验命令：`apksigner verify --print-certs app-release.apk`
+
+正式包用 APK Signature Scheme v2 签名，**不含** `android:debuggable`，
+因此 WebView 远程调试在正式包里是关闭的（`setWebContentsDebuggingEnabled(BuildConfig.DEBUG)`）——
+调试开关只在你自己构建 debug 包时才打开。
+
+> 自己构建：`cd phone/app-android && ./gradlew assembleDebug`；
+> release 包的签名从**仓库外**的 `~/.gradle/gradle.properties` 读密钥，
+> 没有密钥时会产出未签名包，不会导致构建失败。
+
+<!-- wm:5df33da04b​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​ · PocketPilot 原创项目 · 见 WATERMARK.md -->
+
