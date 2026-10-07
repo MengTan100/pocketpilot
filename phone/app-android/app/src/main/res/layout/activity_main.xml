@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:54b02ad743​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<!--
+  版面说明
+  ========
+  · webView      连上后全屏显示 DSH，不叠加任何我们自己的控件
+  · syncChip     同步状态胶囊：默认隐藏，只在"补同步中/刚重连/未同步"时短暂出现
+  · welcomePanel 入口页（**启动默认停在这里**，不自动进入对话页）
+
+  关于"不自动进入"（按用户要求）：
+    以前 onCreate 里直接 connect(manual=false)，一打开就跳进对话页，"太顺滑"，
+    用户来不及确认要连哪里。现在启动只渲染入口页，必须点「进入」才连接。
+    入口页会显示"上次连接：<地址>"，让用户清楚点下去会连到哪儿。
+
+  关于设置：入口页的「设置」里可以切换语言（一次性全局生效）、查看项目介绍、
+  跳转 GitHub 点 Star、以及手动填写桥接地址。
+
+  注意：刻意不写 fitsSystemWindows。Android 15 起系统强制 edge-to-edge，
+  安全区由 MainActivity 的 WindowInsets 监听统一处理。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFF">
+
+    <!--
+      saveEnabled="false" 是必须的（踩过坑）：
+      系统会在 onRestoreInstanceState() 里恢复上次退出的视图可见性，而它执行在 onCreate() 之后，
+      会把入口页"重新藏起来"、把 WebView 显示出来 —— 结果就是"一打开直接进了 DSH 页面"，
+      看着像自动连接，其实连日志里的「开始连接」都没有，是个**过期页面**。
+      关掉它的状态保存，启动状态一律由 MainActivity 决定（默认停在入口页）。
+    -->
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:saveEnabled="false"
+        android:visibility="gone" />
+
+    <!--
+      侧栏开关把手：贴在左边缘中部。
+      点击时调用 DSH 自己的折叠按钮（[class*="_toggle"]），
+      状态由 DSH 的 data-sidebar-collapsed 管理，App 不另造状态。
+    -->
+    <ImageButton
+        android:id="@+id/btnRailToggle"
+        android:layout_width="26dp"
+        android:layout_height="52dp"
+        android:layout_gravity="start|center_vertical"
+        android:background="@drawable/rail_handle_bg"
+        android:contentDescription="@string/btn_rail_desc"
+        android:padding="5dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_chevron_right"
+        android:visibility="gone" />
+
+    <!-- 同步状态胶囊：默认隐藏，异常时短暂出现；未同步时点它 = 手动重同步 -->
+    <LinearLayout
+        android:id="@+id/syncChip"
+        android:layout_width="wrap_content"
+        android:layout_height="30dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/sync_chip_bg"
+        android:clickable="true"
+        android:contentDescription="@string/sync_chip_desc"
+        android:elevation="6dp"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/syncChipText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#374151"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/welcomePanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingHorizontal="24dp"
+            android:paddingTop="48dp"
+            android:paddingBottom="40dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/welcome_title"
+                android:textColor="#111827"
+                android:textSize="26sp"
+                android:textStyle="bold" />
+
+            <!-- 上次连到哪儿：让用户点「进入」之前心里有数 -->
+            <TextView
+                android:id="@+id/entrySummary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:textColor="#374151"
+                android:textSize="15sp" />
+
+            <TextView
+                android:id="@+id/statusDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:lineSpacingExtra="4dp"
+                android:text=""
+                android:textColor="#6B7280"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:lineSpacingExtra="6dp"
+                android:text="@string/welcome_desc"
+                android:textColor="#6B7280"
+                android:textSize="16sp" />
+
+            <!-- 主操作：点了才进入对话页（启动不再自动跳转） -->
+            <Button
+                android:id="@+id/btnEnter"
+                android:layout_width="match_parent"
+                android:layout_height="68dp"
+                android:layout_marginTop="30dp"
+                android:background="@drawable/btn_primary"
+                android:text="@string/btn_enter"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnScan"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/btn_secondary"
+                android:text="@string/btn_scan_pair"
+                android:textColor="#203030"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnCode"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/btn_secondary"
+                android:text="@string/btn_code_pair"
+                android:textColor="#203030"
+                android:textSize="17sp" />
+
+            <Button
+                android:id="@+id/btnSettings"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:layout_marginTop="12dp"
+                android:text="@string/btn_settings"
+                android:textColor="#203030"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <!--
+              免责声明与使用须知：常驻入口（不是只有首次启动才看得到）。
+              首次启动会强制弹出并要求同意，之后随时可从点这里复查。
+            -->
+            <TextView
+                android:id="@+id/termsLink"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp"
+                android:text="@string/terms_settings_entry"
+                android:textColor="#2563EB"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/hintText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:lineSpacingExtra="6dp"
+                android:text="@string/welcome_hint"
+                android:textColor="#9CA3AF"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </ScrollView>
+
+</FrameLayout>

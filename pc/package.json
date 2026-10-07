@@ -1,0 +1,16 @@
+{
+  "name": "dsh-phone-bridge-pc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PC 端桥接守护（DSH 手机指挥 · PC 执行）",
+  "main": "bridge.js",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "_watermark": {
+    "project": "dsh-phone-bridge",
+    "origin": "8ead0b1032",
+    "license": "MIT",
+    "notice": "见 WATERMARK.md"
+  }
+}

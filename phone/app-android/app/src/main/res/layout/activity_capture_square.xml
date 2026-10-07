@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:0c9ec265bb​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<!--
+  自定义扫码布局。
+
+  关键点：DecoratedBarcodeView 支持 zxing_framing_rect_width / zxing_framing_rect_height，
+  显式指定相等值即可得到**正方形**取景框。
+  默认实现是分别按屏幕宽、高的 5/8 计算，竖屏下必然是细长矩形 —— 这就是之前
+  "扫码框是长方形"的根因（setOrientationLocked 管不到它）。
+-->
+<com.journeyapps.barcodescanner.DecoratedBarcodeView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/zxing_barcode_scanner"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:zxing_framing_rect_width="260dp"
+    app:zxing_framing_rect_height="260dp"
+    app:zxing_preview_scaling_strategy="centerCrop"
+    app:zxing_use_texture_view="true" />

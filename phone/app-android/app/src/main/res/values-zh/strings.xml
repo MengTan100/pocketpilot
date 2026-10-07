@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: MIT
+  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
+  wm:c489187977​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
+-->
+<!--
+  简体中文（values-zh/）。默认语言为英文（values/ 为兜底语言）。
+  缺键会回落到 values/strings.xml。
+  语言跟随系统自动选择；用户也可在"设置 → 语言"里手动指定（一次性全局切换）。
+-->
+<resources>
+    <!--
+      应用名：独立品牌，**不使用 DeepSeek 的产品名**（那属于他人的商标，
+      直接当自己的应用名不合适）。与 DSH 的关系放在描述里做指代性使用即可。
+    -->
+    <string name="app_name">PocketPilot</string>
+
+    <!-- 入口页 -->
+    <string name="welcome_title">PocketPilot · 用手机指挥电脑上的 DeepSeek Harness</string>
+    <string name="welcome_desc">在电脑上执行任务，用手机查看进度、下发指令。\n三种连接方式：USB 数据线、同一 Wi-Fi、跨网络。</string>
+    <string name="welcome_hint">第一次使用？点“扫描二维码”——电脑上的配对页面会显示二维码，扫一下即可，不用抄地址和令牌。\n\n已经插好数据线或连着同一 Wi-Fi？点“进入”，会自动找到你的电脑。</string>
+    <string name="btn_enter">进入</string>
+    <string name="entry_last_target">上次连接：%1$s</string>
+    <string name="entry_no_pairing">尚未配对——请先扫描二维码或输入配对码。</string>
+    <string name="btn_scan_pair">扫描二维码</string>
+    <string name="btn_code_pair">配对码</string>
+    <string name="btn_settings">设置</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_language">语言</string>
+    <string name="settings_about">关于本项目</string>
+    <string name="settings_star">在 GitHub 上加星</string>
+    <string name="settings_manual">桥接地址（手动）</string>
+    <string name="settings_close">关闭</string>
+
+    <!-- 语言 -->
+    <string name="language_title">语言</string>
+    <string name="language_system">跟随系统</string>
+    <string name="language_note">一次性应用到整个应用。</string>
+
+    <!-- 关于 -->
+    <string name="about_title">关于 %1$s</string>
+    <string name="about_body">在手机上直接指挥电脑上正在运行的 DeepSeek Harness 会话：在电脑端启动任务，然后在手机上跟进进度、下发指令、查看结果。\n\n• 三种连接方式：USB 数据线、同一 Wi-Fi、跨网络（Cloudflare 隧道）\n• 电脑端 DSH 始终只监听本机回环地址——认证、代理、保活与重连都由桥接负责\n• 手机无需安装额外应用，也无需 root
+• 独立第三方工具，与 DeepSeek 官方无隶属或背书关系\n\n如果这个项目对你有帮助，欢迎在 GitHub 上点个星。</string>
+    <string name="star_hint">要打开 GitHub 仓库点个星吗？</string>
+    <string name="star_failed">无法打开浏览器，请手动访问：\n%1$s</string>
+    <string name="project_repo_label">GitHub 仓库</string>
+
+    <!-- 配对 / 连接 -->
+    <string name="btn_reload">重新连接</string>
+    <string name="btn_exit">退出</string>
+    <string name="exit_confirm">断开与电脑的连接并返回入口页？</string>
+    <string name="btn_toggle_desc">折叠或展开连接状态</string>
+    <string name="btn_rail_desc">折叠或展开左侧边栏</string>
+    <string name="btn_direct_connect">进入</string>
+    <string name="btn_manual">手动输入地址</string>
+    <string name="dialog_code_title">输入电脑上显示的配对码</string>
+    <string name="dialog_code_hint">8 位字符，例如 CK8V7TM2</string>
+    <string name="code_bad">配对码不正确——请核对电脑屏幕</string>
+    <string name="code_ok">已配对，正在连接…</string>
+    <string name="code_rate_limited">尝试次数过多，请稍后再试。</string>
+    <string name="code_need_bridge">请先在电脑上运行 start-bridge.bat</string>
+    <string name="pc_dsh_started">电脑端 DSH 已启动，正在重新连接…</string>
+    <string name="pc_dsh_stopped">电脑端 DSH 已关闭，请在电脑上重新打开。</string>
+    <string name="status_pc_dsh_off">电脑端 DSH 未运行</string>
+    <string name="auth_failed">认证持续失败，请重启电脑上的 DSH 后重试。</string>
+    <string name="pick_file_title">添加文件</string>
+    <string name="pick_file_phone">从手机选择（上传到电脑）</string>
+    <string name="pick_file_pc">从电脑选择（会打开电脑端文件对话框）</string>
+    <string name="pick_file_failed">无法打开文件选择器</string>
+    <string name="upload_started">正在上传到电脑…</string>
+    <string name="upload_ok">上传完成——路径已写入输入框</string>
+    <string name="upload_failed">上传失败，请检查与电脑的连接。</string>
+    <string name="pc_pick_waiting">请在电脑上选择文件…</string>
+    <string name="heal_reconnected">连接已自动恢复</string>
+    <string name="heal_page_frozen">页面无响应——已自动刷新</string>
+    <string name="heal_rebuilding">连接持续失败——正在重建页面…</string>
+    <string name="connect_busy">正在连接，请稍候…</string>
+    <string name="scan_prompt">把电脑屏幕上的二维码放进取景框内</string>
+    <string name="pair_ok">已配对，正在连接…</string>
+    <string name="pair_bad_qr">未能识别该二维码。请对准电脑上的配对二维码，或改用“进入”。</string>
+    <string name="dialog_manual_title">桥接地址（手动）</string>
+    <string name="dialog_manual_hint">例如 192.168.1.100:3080</string>
+
+    <!-- 状态 -->
+    <string name="status_idle">未连接</string>
+    <string name="status_searching">正在寻找你的电脑…</string>
+    <string name="status_ready">已连接</string>
+    <string name="status_desktop">电脑端</string>
+    <string name="status_bridge">桥接</string>
+    <string name="status_reconnecting">连接已断开，正在重连（第 %1$d 次尝试）</string>
+    <string name="err_no_channel">未找到电脑。请检查：1）电脑上已运行 start-bridge.bat；2）USB 数据线已连接，或两台设备在同一 Wi-Fi 下；3）或使用二维码配对。</string>
+    <string name="err_handshake">握手失败，请重试或重新配对。</string>
+
+    <!-- 同步状态胶囊：只在"补同步中 / 刚重连 / 未同步"时短暂出现，正常时隐藏 -->
+    <string name="sync_chip_desc">对话同步状态</string>
+    <string name="sync_state_synced">已同步</string>
+    <string name="sync_state_syncing">正在补同步…</string>
+    <string name="sync_state_reconnected">已重新连接</string>
+    <string name="sync_state_stale">未同步 · 点此恢复</string>
+    <string name="sync_resync_started">正在补同步对话…</string>
+
+    <!--
+      免责声明与使用须知：首次启动必须确认，之后可在「设置」或入口页重新查看。
+      正文不放在这里 —— 条款要求**中英双语同时展示**（不随界面语言变化），
+      正文写在 MainActivity 的 TERMS_SECTIONS 里，由代码排版（标题加粗、编号分段）。
+    -->
+    <string name="terms_title">免责声明与使用须知</string>
+    <string name="terms_full">查看完整声明</string>
+    <string name="terms_accept">我已阅读并同意</string>
+    <string name="terms_decline">退出</string>
+    <string name="terms_close">关闭</string>
+    <string name="terms_settings_entry">免责声明与使用须知</string>
+    <string name="terms_version_note">条款版本 %1$d · 首次连接前必须确认</string>
+</resources>
