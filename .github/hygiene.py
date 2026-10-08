@@ -28,7 +28,7 @@ BANNED_SUFFIXES = (
     ".dmg", ".pkg", ".deb", ".rpm", ".so", ".aar", ".jar",
 )
 # 唯一白名单：Gradle Wrapper 的 jar 必须入库，否则构建不可复现
-ALLOWED_PATHS = {"gradle/wrapper/gradle-wrapper.jar"}
+ALLOWED_PATHS = {"phone/app-android/gradle/wrapper/gradle-wrapper.jar"}
 
 # ── 2) 明显密钥形态（拼接构造，避免本文件自我命中）──────────────────────
 GITHUB_TOKEN = "ghp_" + r"[A-Za-z0-9]{20,}"
