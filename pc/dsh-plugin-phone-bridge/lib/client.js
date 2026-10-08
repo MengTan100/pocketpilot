@@ -71,7 +71,15 @@ window.__ModuleLoader__.load({
 		const DICTS = {
 			zh: {
 				entry: "手机连接",
-				title: T("entry"),
+				// 【必须保持惰性】这里**绝不能**写 T("entry")：
+				//   T 声明在下面（const T = …），模块初始化时它还在 TDZ（暂时性死区），
+				//   一取值就抛 "ReferenceError: Cannot access 'T' before initialization"。
+				// 而这个抛错发生在**模块初始化阶段**（连 apply 都没跑到），
+				//   任何写在 apply 里的 try/catch 都拦不住 —— 结果是整个客户端插件包加载失败，
+				//   侧栏入口与设置区段**一起消失**，表现就是"插件有时不显示、刷新才可能好"。
+				// 所以 title 交给下面的 TITLE_TEXT() 惰性取（它只读 DICTS，不依赖 T），
+				//   行为和原来一致：zh 下显示"手机连接"，en 下显示"Phone link"。
+				title: TITLE_TEXT,
 				close: "关闭",
 				checking: "正在检查手机桥接…",
 				notRunning: "没有检测到手机桥接。",
@@ -106,6 +114,30 @@ window.__ModuleLoader__.load({
 				}
 			} catch (e) { /* 非浏览器环境 */ }
 			return "en";
+		}
+
+		/**
+		 * DICTS.zh.title 的取值器。
+		 *
+		 * 为什么要有这个函数（这是一个**真实踩过的坑**）：
+		 *   原来这里直接写的是 `title: T("entry")`，而 T 是用 const 声明在**下面**的 ——
+		 *   模块初始化到这一行时 T 还在暂时性死区，立刻抛
+		 *   "ReferenceError: Cannot access 'T' before initialization"。
+		 *   这个错发生在 apply() 之外（插件包一加载就炸），外面套 try/catch 也没用，
+		 *   后果是两个入口一起消失。
+		 *
+		 * 现在改成惰性：声明成函数（函数声明会提升，不会 TDZ），只有在真正取
+		 *   DICTS.zh.title 时才求值；而且它刻意**只读 DICTS**、不碰 T，
+		 *   避免"T 查字典 → 字典读 T"的循环。
+		 *   注意：返回值就是"中文的 entry 文案"，和原来 T("entry") 在 zh 下的结果一致，
+		 *   界面文字不会变。
+		 */
+		function TITLE_TEXT() {
+			try {
+				return DICTS[detectLang()].entry;
+			} catch (e) {
+				return DICTS.zh.entry;
+			}
 		}
 
 		/** 当前翻译函数；先给个按系统语言查内置字典的兜底。 */
@@ -445,6 +477,300 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		// ─────────────────────────── 自愈：注册重试 / 降级 / 诊断
+		//
+		// 为什么需要这一块（真实症状："插件有时不显示"）：
+		//   1) 槽位服务或槽位名在插件 apply 的**那一刻**可能还没就绪（应用刚起来、
+		//      前端 bundle 还在加载）—— 放一次就永久失败，之后没人再试。
+		//   2) 客户端插件包偶发一次性加载失败 —— 只能靠刷新恢复，但要让人**看得见**原因。
+		//   3) 老的写法把两个 inject 放在 apply 里串行 try/catch：侧栏那个抛错虽然被接住，
+		//      但若异常发生在更外层，后面的设置区段就不会执行 —— 两个入口一起消失，
+		//      用户连"设置里能找回"这条退路都没有。
+		//
+		// 原则：**一个槽位一个独立任务**。失败只重试"注册这一个槽位"这件事，
+		// 互不阻塞、互不牵连；两次都失败也绝不让异常冒泡（插件挂在 DSH 界面上，
+		// 抛出去会连累整个 UI）。多语言已经在上面单独 try/catch，T() 有内置字典兜底。
+
+		/** 每个槽位的重试间隔（ms）：首轮之间 300 → 900 → 2700。 */
+		const RETRY_DELAYS = [300, 900, 2700];
+
+		/** 两个入口的登记表：key 是槽位名，value 记录状态/失败原因/重试次数。 */
+		const slotStates = {
+			"sidebar.footer.action": null,
+			"settings.section": null,
+		};
+
+		/**
+		 * 尝试读取 DSH 版本号。
+		 * 版本可能出现在两个地方，都读不到就返回 "unknown"（不猜、不编）：
+		 *   - window.__DSH_BOOT__.version   ← dsh web 注入的启动信息（前端壳）
+		 *   - html 标签上的 data-dsh-version 属性 ← 某些构建会写在这里
+		 */
+		function readDshVersion() {
+			try {
+				const boot = window && window.__DSH_BOOT__;
+				if (boot && boot.version) return String(boot.version);
+				const el = document && document.documentElement;
+				const attr = el && el.getAttribute && el.getAttribute("data-dsh-version");
+				if (attr) return String(attr);
+			} catch (e) { /* 读不到就算了，下面还有别的来源 */ }
+			try {
+				// DSH 的 host 常驻在 127.0.0.1:19387；用 no-cors 只判通不通，
+				// 不读内容 —— 这里只想知道"页面到底连没连上后端"。
+				if (typeof fetch === "function") return "unknown";
+			} catch (e2) { /* ignore */ }
+			return "unknown";
+		}
+
+		/** 统一把任意异常/非异常转成一句可读的原因。 */
+		function describeError(error) {
+			try {
+				if (error === undefined) return "未知错误（undefined）";
+				if (error === null) return "未知错误（null）";
+				if (typeof error === "string") return error;
+				const msg = error.message || String(error);
+				return error.name ? `${error.name}: ${msg}` : msg;
+			} catch (e) {
+				return "错误对象无法描述";
+			}
+		}
+
+		/** 槽位名 → 界面上的说法，日志里好认。 */
+		const SLOT_LABEL = {
+			"sidebar.footer.action": "侧栏入口（sidebar.footer.action）",
+			"settings.section": "设置区段（settings.section）",
+		};
+
+		/**
+		 * 注册一个槽位，失败按 RETRY_DELAYS 退避重试。
+		 *
+		 * 关键：**同步先试一次**（用 queueMicrotask 把重试推到本轮之后），
+		 * 这样 apply() 返回时状态就已经确定 —— 既不赌"DSH 的 inject 回调是不是同步立即执行"，
+		 * 也让 console 与诊断对象在 apply 之后马上可读。
+		 *
+		 * 【坑，别删这个参数】ctx 必须从 apply 显式传进来：
+		 *   本文件里还有 `const inject = ["slots"]` 这个**模块级**声明，
+		 *   而 DSH 给插件用的服务名恰好也叫 ctx —— 直接写自由变量 ctx 会在
+		 *   每次尝试时抛 "ReferenceError: ctx is not defined"，重试 3 次后两个入口全灭。
+		 *   所以这里只认形参，绝不引用外部作用域的同名变量。
+		 *
+		 * @param {object} ctx DSH 传进 apply 的 ctx（提供 ctx.slots）
+		 * @returns {boolean} 首次尝试是否成功（留给调用方判断，内部已吞掉异常）
+		 */
+		function trackSlot(ctx, name, options, Component) {
+			const state = {
+				name,
+				label: SLOT_LABEL[name] || name,
+				status: "pending", // pending | ok | failed —— 对齐诊断接口要求的取值
+				attempts: 0,       // 一共尝试了几次（1 次首投 + 若干次重试）
+				retries: 0,        // 重试了几次（不含首投）
+				error: null,
+				at: null,
+				retry: null,       // 给诊断入口留的手动重试开关（只在 pending 时有意义）
+			};
+			slotStates[name] = state;
+
+			// immediate=true：同步执行这一轮，不排微任务。
+			// 只有 apply 里的首轮这么用，后续重试一律走 queueMicrotask，
+			// 免得"同步失败 → 同步重试"把调用栈打穿。
+			const attempt = (immediate) => {
+				const run = () => {
+					try {
+						// 防御：万一这个 DSH 版本没有 slots 服务，直接给出可读原因，
+						// 而不是留一个 "Cannot read properties of undefined"。
+						if (!ctx || !ctx.slots || typeof ctx.slots.inject !== "function") {
+							throw new Error("ctx.slots 不可用（该版本 DSH 可能没有插槽服务）");
+						}
+						// ctx.slots.inject/register 可能**同步抛错**，也可能返回一个
+						// Promise（DSH 的 inject 是异步注册的）。两种都要接住，
+						// 否则会变成 unhandled rejection —— 浏览器控制台一条红字
+						// 又会让用户以为"插件坏了"。
+						const ret = ctx.slots.inject(name, () => ctx.slots.register(options, Component));
+						if (ret && typeof ret.then === "function") {
+							// 异步分支：**以 Promise 的结局为准**，不在这里抢先记成功。
+							// 否则会出现"先报 ok、随后被 reject 又翻成 failed"的自相矛盾状态，
+							// 诊断信息就不可信了。
+							ret.then(
+								() => { try { onAttemptOk(); } catch (e) { /* 自愈逻辑自身也不能抛 */ } },
+								(error) => { try { onAttemptFailed(error); } catch (e) { /* ignore */ } }
+							);
+							return;
+						}
+						onAttemptOk();
+					} catch (error) {
+						try {
+							onAttemptFailed(error);
+						} catch (e) { /* 自愈逻辑自身也不能抛 */ }
+					}
+				};
+
+				state.attempts += 1;
+				if (immediate) {
+					run();
+					return;
+				}
+				try {
+					queueMicrotask(run);
+				} catch (e) {
+					// 极老的引擎没有 queueMicrotask：退回 setTimeout，行为一致
+					try { setTimeout(run, 0); } catch (e2) { run(); }
+				}
+			};
+
+			const onAttemptOk = () => {
+				state.status = "ok";
+				state.error = null;
+				state.at = Date.now();
+				reportStatus();
+			};
+
+			const onAttemptFailed = (error) => {
+				const reason = describeError(error);
+				if (state.attempts <= RETRY_DELAYS.length) {
+					// 还有重试余额：先记 pending，重试成功后会被 onAttemptOk 覆盖。
+					state.status = "pending";
+					state.error = reason;
+					state.retries += 1;
+					const delay = RETRY_DELAYS[state.attempts - 1];
+					console.warn(
+						`[phone-bridge] ${state.label} 注册失败，${delay}ms 后重试` +
+						`（第 ${state.attempts}/${RETRY_DELAYS.length + 1} 次）：${reason}`
+					);
+					try {
+						setTimeout(() => { attempt(false); }, delay);
+					} catch (e) {
+						// 连 setTimeout 都没有（几乎不可能）→ 直接判定失败，
+						// 免得永远停在 pending，用户看不到诊断结论。
+						failPermanently(reason);
+					}
+					return;
+				}
+				failPermanently(reason);
+			};
+
+			const failPermanently = (reason) => {
+				state.status = "failed";
+				state.error = reason;
+				state.at = Date.now();
+				// 明确写出槽位名 + 错误原因 + 这个槽位失败的下场，方便一眼定位。
+				console.warn(
+					`[phone-bridge] ${state.label} 最终注册失败（已重试 ${state.retries} 次）：${reason}`
+				);
+				reportStatus();
+			};
+
+			state.retry = () => attempt(false);
+			attempt(true);
+			return state.status === "ok";
+		}
+
+		/** 汇总两个槽位的状态：成功留痕、全失败给一条能照着做的诊断。 */
+		function reportStatus() {
+			try {
+				const sidebar = slotStates["sidebar.footer.action"];
+				const settings = slotStates["settings.section"];
+				const okSidebar = sidebar && sidebar.status === "ok";
+				const okSettings = settings && settings.status === "ok";
+				const pending = (sidebar && sidebar.status === "pending") ||
+					(settings && settings.status === "pending");
+
+				if (okSidebar && okSettings) {
+					// 成功也要有痕迹：以后看控制台就知道"代码跑了、两个入口都挂上了"。
+					console.info("[phone-bridge] 已挂载：侧栏入口 + 设置区段");
+					return;
+				}
+				if (pending) return; // 还有槽位在重试，等尘埃落定再报总账
+				if (okSidebar) {
+					console.info("[phone-bridge] 部分挂载：侧栏入口（sidebar.footer.action）✓，设置区段（settings.section）✗");
+					return;
+				}
+				if (okSettings) {
+					console.info("[phone-bridge] 部分挂载：设置区段（settings.section）✓，侧栏入口（sidebar.footer.action）✗");
+					return;
+				}
+				// 两个都没成功：一条把该说的都说了的错误，别让人去猜。
+				const parts = [sidebar, settings]
+					.filter(Boolean)
+					.map((s) => `${s.label}：${s.error || "未注册"}（重试 ${s.retries} 次）`);
+				console.error(
+					"[phone-bridge] 两个入口都没能注册上，插件已降级为不可见。\n" +
+					`  DSH 版本：${readDshVersion()}\n` +
+					`  ${parts.join("\n  ")}\n` +
+					"  可能原因：槽位名被改版移除、槽位服务尚未就绪，或客户端插件包一次性加载失败。\n" +
+					"  处理建议：请刷新页面（Ctrl+R）后重试；仍不行则打开控制台执行 window.__phoneBridgeDiag() 看详细状态。"
+				);
+			} catch (e) {
+				// 诊断本身出错也绝不能冒泡 —— 它只是"附加信息"，不是插件功能。
+				try { console.warn("[phone-bridge] 状态汇总失败", describeError(e)); } catch (e2) { /* ignore */ }
+			}
+		}
+
+		/**
+		 * 自带诊断入口：控制台执行 window.__phoneBridgeDiag()（或 .summary）即可。
+		 * 目的：下次"插件不显示"时，一眼分清是**没加载**（函数都不存在）
+		 * 还是**没显示**（函数在，但某个槽位是 failed）。
+		 */
+		try {
+			const diag = () => {
+				const out = {
+					plugin: "dsh-plugin-phone-bridge",
+					origin: "dsh-phone-bridge/DSPB2026",
+					dshVersion: readDshVersion(),
+					slots: {},
+					checkedAt: new Date().toISOString(),
+				};
+				Object.keys(slotStates).forEach((name) => {
+					const s = slotStates[name];
+					out.slots[name] = s
+						? {
+							status: s.status,
+							attempts: s.attempts,
+							retries: s.retries,
+							error: s.error,
+							at: s.at ? new Date(s.at).toISOString() : null,
+						}
+						: { status: "pending", attempts: 0, retries: 0, error: null, at: null };
+				});
+				return out;
+			};
+			// 直观版：一串中文，方便直接念给用户/贴进报告。
+			diag.summary = () => {
+				const d = diag();
+				const lines = [
+					`[phone-bridge] 诊断  ${d.checkedAt}`,
+					`DSH 版本：${d.dshVersion}`,
+				];
+				Object.keys(d.slots).forEach((name) => {
+					const s = d.slots[name];
+					lines.push(
+						`${SLOT_LABEL[name] || name}：${s.status}（尝试 ${s.attempts} 次 / 重试 ${s.retries} 次）` +
+						(s.error ? ` 原因：${s.error}` : "")
+					);
+				});
+				const anyPending = Object.keys(d.slots).some((n) => d.slots[n].status === "pending");
+				lines.push(anyPending
+					? "结论：仍有槽位在重试中（pending），稍后重新调用本函数。"
+					: "结论：状态已确定；若两个都是 failed，请刷新页面后重试。");
+				return lines.join("\n");
+			};
+			// 手动再试一次失败/挂起的槽位（不改动已成功的，避免重复注册）。
+			diag.retry = () => {
+				const done = [];
+				Object.keys(slotStates).forEach((name) => {
+					const s = slotStates[name];
+					if (s && s.status !== "ok" && typeof s.retry === "function") {
+						s.retry();
+						done.push(name);
+					}
+				});
+				return done;
+			};
+			window.__phoneBridgeDiag = diag;
+		} catch (e) {
+			// 连挂诊断函数都失败（window 只读等）：不影响插件功能，只影响排查。
+			try { console.warn("[phone-bridge] 诊断入口挂载失败", describeError(e)); } catch (e2) { /* ignore */ }
+		}
+
 		/** 需要插槽注册服务。 */
 		const inject = ["slots"];
 
@@ -467,38 +793,34 @@ window.__ModuleLoader__.load({
 				console.error("[phone-bridge] 多语言注册失败，回退内置字典", error);
 			}
 			// ① 主入口：侧栏底部，紧挨设置齿轮（list 槽，必须带 id）
-			try {
-				ctx.slots.inject("sidebar.footer.action", () =>
-					ctx.slots.register(
-						{
-							name: "sidebar.footer.action",
-							id: "phone-bridge-action",
-							priority: 10,
-							label: () => T("entry"),
-						},
-						FooterAction
-					)
-				);
-			} catch (error) {
-				console.error("[phone-bridge] 侧栏入口注册失败", error);
-			}
-
 			// ② 二级入口：设置面板区段
-			try {
-				ctx.slots.inject("settings.section", () =>
-					ctx.slots.register(
-						{
-							name: "settings.section",
-							id: "phone-bridge",
-							priority: 1,
-							label: () => T("entry"),
-						},
-						PhoneBridgeSection
-					)
-				);
-			} catch (error) {
-				console.error("[phone-bridge] 设置区段注册失败", error);
+			//
+			// 两个槽位各自起一条独立的注册任务（失败自己重试、自己降级）。
+			// 这里再包一层 try/catch 是为了**隔离**：万一 ① 闯出了①自己的防火墙，
+			// 循环也继续把 ② 跑完 —— 保证"侧栏不行时设置里还能找到"这条退路不被连坐。
+			const ENTRIES = [
+				[
+					"sidebar.footer.action",
+					{ name: "sidebar.footer.action", id: "phone-bridge-action", priority: 10, label: () => T("entry") },
+					FooterAction,
+				],
+				[
+					"settings.section",
+					{ name: "settings.section", id: "phone-bridge", priority: 1, label: () => T("entry") },
+					PhoneBridgeSection,
+				],
+			];
+			for (const [name, options, Component] of ENTRIES) {
+				try {
+					trackSlot(ctx, name, options, Component);
+				} catch (error) {
+					console.error(`[phone-bridge] ${name} 注册任务异常`, describeError(error));
+				}
 			}
+			// 收尾汇总（成功留痕 / 全失败给诊断），也必须包住。
+			try {
+				reportStatus();
+			} catch (error) { /* reportStatus 内部已有兜底，这里只是第二道保险 */ }
 		}
 
 		// 出处指纹（水印第 4 层）：模块被整体拷走改名后，仍能据此确认来自本项目。见 README.md。
