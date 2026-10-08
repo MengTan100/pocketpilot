@@ -11,12 +11,21 @@ import java.util.concurrent.TimeUnit
  *
  * 设计要点：
  *  - 只用 HttpURLConnection，不引入网络库，装包体积小、启动快；
- *  - 通道择优放在客户端做：USB(经 adb reverse 的 127.0.0.1) → 局域网 → 远程，
- *    逐个探测 /health 取最快可用的那个；
+ *  - 通道择优放在客户端做，但**规则抽在 Link.kt**：三态（USB / 局域网 / 异地）判定
+ *    与"并发探测 + 可达优先 + 延迟最低"的择优都是纯函数，可离线测试；
  *  - 所有绝对时间比较都以 PC 时钟为基准（握手返回 serverTime），
  *    避免两端钟差导致"用时"之类显示不一致。
  */
 object Bridge {
+
+    /**
+     * 单个候选的探测超时。
+     *
+     * 取 1.2s 的理由：局域网/回环的健康检查正常在 10~50ms 量级，异地隧道也就 200~600ms，
+     * 1.2s 足够容错；又足够短 —— 因为候选是**并发**探测的，总等待≈这一个超时，
+     * 用户不会觉得界面卡住。之前 2.5s 且串行，拔线后要等两个超时才有结果。
+     */
+    const val PROBE_TIMEOUT_MS: Long = 1200L
 
     data class Endpoint(val base: String, val label: String)
 
@@ -46,27 +55,57 @@ object Bridge {
 
     /**
      * 组装候选通道（有序）：
-     *   已配对地址 → 上次可用 → 异地地址 → USB 隧道(127.0.0.1)
+     *   已配对地址 → 上次可用 → 已知局域网（上次握手/配对得到的）→ 异地隧道 → USB 隧道
      *
      * 顺序依据实测延迟：本机/USB 最快（10ms 级），局域网次之，
      * 异地（Cloudflare 隧道）最慢（秒级），因此作为兜底排最后。
-     * 手机端会逐个探测取最快的可用项，所以顺序只影响优先级、不影响正确性。
+     * 手机端会**并发**探测全部候选取最快的可用项，所以顺序只影响"延迟相同时谁优先"，
+     * 不影响谁被选中。
+     *
+     * @param lanHints 上次握手/配对登记过的局域网候选。**这是缓存失效场景的关键**：
+     *   路由器换租约后 prefs 里的旧地址可能已不存在，而握手拿到的列表里往往有当前地址。
      */
     fun buildCandidates(
         configured: String?,
         lastGood: String?,
         port: Int = 3080,
-        remoteBase: String? = null
+        remoteBase: String? = null,
+        lanHints: List<String> = emptyList(),
+        usbHints: List<String> = emptyList()
     ): List<Endpoint> {
         val list = mutableListOf<Endpoint>()
         if (!configured.isNullOrBlank()) list += Endpoint(normalize(configured), "已配对")
         if (!lastGood.isNullOrBlank()) list += Endpoint(normalize(lastGood), "上次可用")
+        lanHints.forEach { if (it.isNotBlank()) list += Endpoint(normalize(it), "已知局域网") }
         // 异地通道：本机与局域网都不通时（人在外面）用它
-        if (!remoteBase.isNullOrBlank()) list += Endpoint(normalize(remoteBase), "异地")
+        if (!remoteBase.isNullOrBlank()) list += Endpoint(normalize(remoteBase), "异地隧道")
+        usbHints.forEach { if (it.isNotBlank()) list += Endpoint(normalize(it), "USB 隧道") }
         // USB 隧道：由 PC 端 adb reverse 建立，走线最快
-        list += Endpoint("http://127.0.0.1:$port", "USB")
+        list += Endpoint("http://127.0.0.1:$port", "USB 隧道")
         return list.distinctBy { it.base }
     }
+
+    /**
+     * 把候选交给 Link 的规则，得到"三态 + 依据 + 去重排序"之后的候选列表。
+     *
+     * 为什么不直接在 buildCandidates 里做：那一层是"有哪些地址"，
+     * 这一层才是"每个地址属于哪条路、为什么"。分开之后，判定规则可以单独测。
+     */
+    fun linkCandidates(
+        configured: String?,
+        lastGood: String?,
+        port: Int = 3080,
+        remoteBase: String? = null,
+        lanHints: List<String> = emptyList(),
+        usbHints: List<String> = emptyList()
+    ): List<LinkCandidate> = Link.candidates(
+        configured = configured,
+        lastGood = lastGood,
+        remoteBase = remoteBase,
+        lanHints = lanHints,
+        usbHints = usbHints,
+        port = port
+    )
 
     /**
      * 解析配对内容，兼容三种来源：
@@ -250,7 +289,28 @@ object Bridge {
         }
     }
 
-    /** 选出最快可用通道。 */
+    /**
+     * 并发探测 + 择优（真实入口）。
+     *
+     * 为什么不是"逐个试"：候选里往往同时有死地址（旧局域网）与必然超时的回环地址
+     *（拔线后 127.0.0.1 不通要等满一个超时）。串行时最坏耗时 = 候选数 × 超时，
+     * 用户每次连接都要白等好几十秒；并发之后总耗时≈单个超时（1.2s 级）。
+     *
+     * 返回"选了谁 + 全部探测明细 + 为什么"：日志与界面提示都靠它，
+     * 从而做到可解释（用户看到的不是一句笼统的"连接失败"）。
+     */
+    fun pickBest(candidates: List<LinkCandidate>): LinkSelection {
+        // 并发探测每一条（Link.probeAll 内部用线程池，互不等待）
+        val probes = Link.probeAll(candidates, PROBE_TIMEOUT_MS) { base, timeout ->
+            probe(base, timeout.toInt())
+        }
+        val byBase = probes.associateBy { it.base }
+        return Link.pickBest(candidates) { c ->
+            byBase[c.base] ?: LinkProbe(c.base, c.label, c.mode, c.reason, null, "未探测")
+        }
+    }
+
+    /** 选出最快可用通道（旧接口，保留给不需要三态信息的调用点）。 */
     fun pickFastest(candidates: List<Endpoint>, timeoutMs: Int = 2500): ProbeResult? {
         var best: ProbeResult? = null
         for (ep in candidates) {
@@ -310,5 +370,19 @@ object Bridge {
         val b = normalize(base)
         val suffix = if (mode == "lan" && bridgeToken.isNotBlank()) "?k=$bridgeToken" else ""
         return "$b/dsh/$suffix"
+    }
+
+    /**
+     * 按**实测出来的链接类型**决定要不要带令牌，而不是只看桥接自称的 mode。
+     *
+     * 为什么以链路类型为准：令牌是"远端凭证"，USB（回环）本来就不需要它 ——
+     * 手机 127.0.0.1 只有经 adb reverse 才通，链路上不存在第三方。
+     * 反过来，只要是真·局域网/异地链路且手里有令牌，就一定要带上，
+     * 否则桥接会一直 401，用户看到的是"页面打不开"。
+     */
+    fun entryUrlForMode(base: String, linkMode: LinkMode, bridgeToken: String): String {
+        val b = normalize(base)
+        val needToken = linkMode != LinkMode.USB && bridgeToken.isNotBlank()
+        return if (needToken) "$b/dsh/?k=$bridgeToken" else "$b/dsh/"
     }
 }

@@ -63,4 +63,39 @@ class Prefs(context: Context) {
     var termsAcceptedVersion: Int
         get() = sp.getInt("terms_accepted_version", 0)
         set(v) = sp.edit().putInt("terms_accepted_version", v).apply()
+
+    /**
+     * 令牌属于哪台主机（`host:port` 小写）。
+     *
+     * 为什么必须记：令牌是"发给某台电脑"的凭证。若择优时换了主机（例如旧局域网地址
+     * 失效后改走别的候选），把同一份令牌发过去，等于把凭证交给一台并不认识它的机器。
+     * 因此换主机前要先清空令牌，重新握手升级。空 = 未知（旧版本升级上来的情况），
+     * 此时按"与 base_url 同一台"处理，见 MainActivity.tokenHostFor()。
+     */
+    var tokenHost: String
+        get() = sp.getString("token_host", "") ?: ""
+        set(v) = sp.edit().putString("token_host", v).apply()
+
+    /**
+     * 上次握手/配对得到的**局域网候选列表**（逗号分隔）。
+     *
+     * 这是"缓存失效"场景的救命信息：路由器换了 DHCP 租约后，prefs.baseUrl 里的旧地址
+     * 可能已经不存在（实测事故：base_url=192.168.0.8 已失效，真实地址是 192.168.0.4），
+     * 而握手返回的 lanBases 里通常还带着当前真实地址。只靠"已配对 + 上次可用"两条地址
+     * 去试，就只能在两个死地址上浪费时间。
+     */
+    var lanHints: List<String>
+        get() = (sp.getString("lan_hints", "") ?: "")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        set(v) = sp.edit().putString("lan_hints", v.take(8).joinToString(",")).apply()
+
+    /** 上次握手得到的 USB 隧道候选（当前是 127.0.0.1，留字段以便桥接将来换端口/别名）。 */
+    var usbHints: List<String>
+        get() = (sp.getString("usb_hints", "") ?: "")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        set(v) = sp.edit().putString("usb_hints", v.take(4).joinToString(",")).apply()
 }

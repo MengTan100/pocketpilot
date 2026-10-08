@@ -92,6 +92,22 @@
     <string name="err_no_channel">Computer not found. Please check: 1) start-bridge.bat is running on your computer; 2) the USB cable is connected or both devices are on the same Wi-Fi; 3) or use QR pairing.</string>
     <string name="err_handshake">Handshake failed. Please retry or pair again.</string>
 
+    <!-- Connection path (three states). Shown once connected so the user can tell which route is in use. -->
+    <string name="link_mode_usb">USB</string>
+    <string name="link_mode_lan">Wi-Fi</string>
+    <string name="link_mode_remote">Remote</string>
+    <!-- Status detail, e.g. “Wi-Fi · Known LAN · 40ms” -->
+    <string name="status_link_detail">%1$s · %2$s · %3$dms</string>
+    <!--
+      Advice shown when every known address is unreachable. Deliberately not a bare
+      “connection failed”: the most common cause is a DHCP lease change on the router,
+      so the stored LAN address is stale (measured: stored 192.168.0.8, real 192.168.0.4).
+    -->
+    <string name="err_addr_may_changed">Your computer’s LAN address may have changed: reopen the pairing QR code on the computer and scan it again.</string>
+    <string name="err_all_unreachable">None of the known addresses responded (tried %1$d). %2$s</string>
+    <!-- Changing the target host must clear the old token: never send credentials to a host that does not know them. -->
+    <string name="link_token_cleared">Target host changed — old token cleared, pairing again…</string>
+
     <!-- 同步状态胶囊：只在"补同步中 / 刚重连 / 未同步"时短暂出现，正常时隐藏 -->
     <string name="sync_chip_desc">Conversation sync status</string>
     <string name="sync_state_synced">Synced</string>

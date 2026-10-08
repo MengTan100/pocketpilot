@@ -129,6 +129,15 @@ class MainActivity : AppCompatActivity() {
     private var lastConnectClickAt = 0L
     private val CONNECT_DEBOUNCE_MS = 3000L
 
+    /**
+     * 握手最多尝试几个候选。
+     *
+     * 为什么要有上限：握手超时是 8s（桥接侧可能要先拉起 DSH，不能太短），
+     * 若对每个候选都硬试，5 个候选最坏要等 40s —— 用户会以为 App 卡死了。
+     * 3 个足够覆盖"择优选中的 + 一个备份 + 一个兜底"。
+     */
+    private val MAX_HANDSHAKE_TRIES = 3
+
     /** "按住键盘"窗口时长：连点期间不断续期，全程不放松。
      *  比页面侧"拒绝聚焦"窗口(2000ms)略长，作为兜底层，覆盖键盘请求已发出、正在动画的那一段。 */
     private val IME_GUARD_MS = 2500L
@@ -201,12 +210,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
-        if (result.contents.isNullOrBlank()) {
+        val raw = result.contents
+        if (raw.isNullOrBlank()) {
             Log.d(TAG, "扫码取消或为空")
             return@registerForActivityResult
         }
-        Log.d(TAG, "扫码结果: ${result.contents}")
-        applyPairing(result.contents)
+        // ⚠️ 绝不能打印二维码原文：`dsh1|<host:port>|<bridgeToken>` 的第三段就是令牌，
+        // 而令牌等同电脑的操作权限（见免责声明第 4 条），logcat 是任何能 adb 的人都能读的。
+        // 这里只记"扫到了、多长、属于哪种格式"，够排查用了。
+        Log.d(TAG, "扫码成功: 长度=${raw.length} 格式=${if (raw.startsWith("dsh1|")) "dsh1" else "other"}")
+        applyPairing(raw)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1348,45 +1361,236 @@ class MainActivity : AppCompatActivity() {
         // 连接期间禁掉入口按钮，避免重复触发（连接本身要十几秒）
         binding.btnEnter.isEnabled = false
         lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) { doConnect() }
+            val outcome = withContext(Dispatchers.IO) { doConnect() }
             binding.btnEnter.isEnabled = true
-            if (ok) startWatchdog() else showWelcome(true)
+            if (outcome.ok) {
+                startWatchdog()
+            } else {
+                // 失败态必须给出"为什么 + 该怎么办"：只显示一句"连接失败"，
+                // 用户既不知道是线松了、桥接没开，还是路由器把电脑的地址换了。
+                val brief = if (outcome.detail.isNotBlank()) outcome.detail else getString(R.string.err_handshake)
+                val advice = if (outcome.advice.isNotBlank()) outcome.advice else getString(R.string.err_addr_may_changed)
+                setStatus(Status.BAD, getString(R.string.status_idle), "$brief\n$advice")
+                toast(if (outcome.advice.isNotBlank()) outcome.advice else brief)
+                showWelcome(true)
+            }
         }
     }
 
-    /** 顺序：已配对 → 上次可用 → 默认候选（USB / 局域网）；探测最快者再握手。 */
-    private fun doConnect(): Boolean {
-        val candidates = Bridge.buildCandidates(prefs.baseUrl, prefs.lastGoodBase, remoteBase = prefs.remoteBase)
-        Log.d(TAG, "候选通道: ${candidates.joinToString { "${it.label}=${it.base}" }}")
+    /**
+     * 连接：**并发**探测全部候选（已配对 / 上次可用 / 已知局域网 / 异地隧道 / USB），
+     * 按"可达 + 实测延迟最低"选一条，再握手。
+     *
+     * 为什么必须并发而不是逐个试：真实故障里两个已知地址都是死的
+     *（旧局域网 192.168.0.8 已被路由器换掉；回环 127.0.0.1 只有插线才通），
+     * 串行等于每次连接白等两三个超时。并发之后总等待≈单个 1.2s 超时。
+     *
+     * 返回值里带着"选中的链路类型"与"是否因为换主机清掉了令牌"，
+     * 供界面显示与日志诊断使用。
+     */
+    private data class ConnectOutcome(
+        val ok: Boolean,
+        val mode: LinkMode? = null,
+        val detail: String = "",
+        val advice: String = ""
+    )
 
-        val best = Bridge.pickFastest(candidates)
-        if (best == null) {
-            Log.w(TAG, "所有候选通道都不可达")
-            return fail(getString(R.string.err_no_channel))
-        }
-        Log.d(TAG, "选中通道: ${best.base} (${best.latencyMs}ms)")
+    private fun doConnect(): ConnectOutcome {
+        val candidates = Bridge.linkCandidates(
+            configured = prefs.baseUrl,
+            lastGood = prefs.lastGoodBase,
+            remoteBase = prefs.remoteBase,
+            lanHints = prefs.lanHints,
+            usbHints = prefs.usbHints
+        )
+        // 候选明细里可能带 ?k= 令牌（异地基址带着查询参数），必须经 maskSecrets 再进日志
+        BridgeLog.info("候选通道(${candidates.size}): " + candidates.joinToString(" | ") {
+            "${it.label} ${Link.modeName(it.mode)} ${it.base}"
+        })
 
-        var hs = Bridge.handshake(best.base, prefs.token.ifBlank { null })
-        Log.d(TAG, "握手结果: ok=${hs.ok} mode=${hs.mode} desktopAlive=${hs.desktopAlive} err=${hs.error}")
-        if (!hs.ok && hs.error?.contains("令牌") == true && prefs.token.isNotBlank()) {
-            Log.d(TAG, "令牌可能失效，清空后重试")
-            prefs.token = ""
-            hs = Bridge.handshake(best.base, null)
+        val selection = Bridge.pickBest(candidates)
+        // 每一条都记一笔：哪几个候选、各自耗时、为什么。失败时这些就是全部线索。
+        selection.attempts.forEach { a ->
+            val stat = a.latencyMs?.let { "${it}ms" } ?: ("不通(${a.error ?: "?"})")
+            BridgeLog.info("探测 ${a.candidate.label} ${Link.modeName(a.candidate.mode)} " +
+                "${a.candidate.base} → $stat")
         }
-        if (!hs.ok) return fail(hs.error ?: getString(R.string.err_handshake))
-        return applyHandshake(best, hs)
+
+        val chosen = selection.chosen
+        if (chosen == null) {
+            // 全部不可达：这里必须是**可操作**提示，而不是笼统的"连接失败"。
+            // 实测最常见原因：路由器换了 DHCP 租约，手机里存的是旧局域网地址。
+            BridgeLog.warn("所有候选都不可达；建议：${selection.failureAdvice}")
+            return ConnectOutcome(
+                ok = false,
+                detail = getString(R.string.err_no_channel),
+                advice = selection.failureAdvice
+            )
+        }
+        BridgeLog.info("选中通道: ${chosen.label} ${Link.modeName(chosen.mode)} ${chosen.base}" +
+            " · ${selection.chosenReason}")
+
+        // 可达候选优先握手（把选中的放最前）；探测失败的留作最后兜底 ——
+        // 极少数情况下 /health 被限速而 /handshake 仍可用，不该直接放弃。
+        val reachable = selection.attempts.filter { it.latencyMs != null }.map { it.candidate }
+        val unreachable = selection.attempts.filter { it.latencyMs == null }.map { it.candidate }
+        val handshakeOrder = (listOf(chosen) + reachable + unreachable).distinctBy { it.base }
+
+        val outcome = handshakeWithFallback(chosen, handshakeOrder)
+        if (!outcome.ok) {
+            // 握手失败也要把"选中的是哪条路"记清楚：这样才能区分
+            // "根本没找到电脑" 与 "找到了但握不上手（令牌/桥接未就绪）"。
+            BridgeLog.warn("握手失败：候选=${outcome.candidate?.base} 原因=${outcome.error}")
+            return ConnectOutcome(false, chosen.mode, outcome.error, getString(R.string.err_handshake))
+        }
+        val okCand = outcome.candidate ?: chosen
+        // 延迟取"实际握手成功那条"的实测值（兜底换过候选时，显示的数据必须跟着换）
+        val latency = selection.attempts.firstOrNull { it.candidate.base == okCand.base }?.latencyMs ?: 0L
+        applyHandshake(okCand, outcome.handshake!!, latency, outcome.previousTokenHost)
+        return ConnectOutcome(true, okCand.mode, "", "")
     }
 
-    private fun applyHandshake(ep: Bridge.ProbeResult, hs: Bridge.Handshake): Boolean {
-        if (hs.bridgeToken.isNotBlank()) prefs.token = hs.bridgeToken
-        prefs.lastGoodBase = ep.base
+    private data class PairOutcome(
+        val ok: Boolean,
+        val handshake: Bridge.Handshake?,
+        val candidate: LinkCandidate?,
+        val error: String,
+        /** 清令牌之前登记的令牌主机；成功走 USB 时用它还原，避免白白废掉局域网配对。 */
+        val previousTokenHost: String
+    )
+
+    /**
+     * 握手，并在候选之间做**有限**兜底。
+     *
+     * 为什么要兜底：探测（/health）通过不代表握手一定成功 —— 令牌鉴权、
+     * 桥接刚重启、DSH 尚未就绪都可能让某个候选握手失败，而另一个候选是好的。
+     *
+     * 为什么必须限制次数：握手超时 8s，若对 5 个候选逐个硬试，最坏要等 40s。
+     * 这里只允许尝试 3 个（第一个是择优选中的），把最坏等待压在 24s 内。
+     *
+     * 「换主机先清令牌」在这里做：令牌是发给某台电脑的凭证，
+     * 若这次要连的主机与令牌登记的不一致，先把令牌清空再握手，
+     * 绝不把凭证交给一台并不认识它的机器（`X-Bridge-Token` 就是凭证本身）。
+     */
+    private fun handshakeWithFallback(
+        chosen: LinkCandidate,
+        order: List<LinkCandidate>
+    ): PairOutcome {
+        var token = prefs.token
+        // 清令牌前先把登记主机记下来：USB 握手不该把"配对给局域网/隧道的那份令牌"作废，
+        // 后面 applyHandshake 会用它把登记主机还原回去（详见那里的注释）。
+        val previousTokenHost = prefs.tokenHost
+        var lastError = ""
+
+        for ((index, cand) in order.withIndex()) {
+            if (index >= MAX_HANDSHAKE_TRIES) {
+                BridgeLog.info("握手兜底已达上限 ${MAX_HANDSHAKE_TRIES} 个候选，停止")
+                break
+            }
+            val host = Link.hostPort(cand.base)
+            if (token.isNotBlank() && !isSameHost(host)) {
+                // 目标主机与令牌登记的主机不同 → 先清空，再握手（本次及后续都用空令牌）。
+                // 日志里令牌只留前 4 位：出问题时能看出"换的是不是同一份令牌"，但不足以还原。
+                BridgeLog.warn("目标主机 $host 与令牌登记主机 ${tokenHostFor()} 不同：先清空令牌再握手" +
+                    "（被清掉的令牌 " + BridgeLog.maskSecrets("token=$token") + "）")
+                prefs.token = ""
+                prefs.tokenHost = ""
+                token = ""
+                runOnUiThread { toast(getString(R.string.link_token_cleared)) }
+            }
+
+            var hs = Bridge.handshake(cand.base, token.ifBlank { null })
+            // 401：可能是令牌过期/被桥接轮换过。清掉再试一次，而不是把用户卡在门外。
+            if (!hs.ok && hs.error?.contains("令牌") == true && token.isNotBlank()) {
+                BridgeLog.warn("${cand.base} 握手提示需要重新配对，清空令牌后重试")
+                prefs.token = ""
+                prefs.tokenHost = ""
+                token = ""
+                hs = Bridge.handshake(cand.base, null)
+            }
+            BridgeLog.info("握手 ${cand.label} ${cand.base}: ok=${hs.ok} mode=${hs.mode} " +
+                "desktopAlive=${hs.desktopAlive} err=${hs.error ?: "-"}")
+            if (hs.ok) return PairOutcome(true, hs, cand, "", previousTokenHost)
+            lastError = hs.error ?: getString(R.string.err_handshake)
+        }
+        return PairOutcome(false, null, chosen, lastError, previousTokenHost)
+    }
+
+    /**
+     * 令牌登记的主机。
+     *
+     * tokenHost 为空有两种情况：① 从没存过令牌；② 从旧版本升级上来（那个版本没记主机）。
+     * 后者不能当成"换了主机"就贸然清令牌 —— 那会让老用户平白重新配对一次，
+     * 所以按"与已配对地址同一台"处理。
+     */
+    private fun tokenHostFor(): String {
+        val recorded = prefs.tokenHost
+        if (recorded.isNotBlank()) return recorded
+        if (prefs.token.isBlank()) return ""
+        return Link.hostPort(prefs.baseUrl).ifBlank { Link.hostPort(prefs.lastGoodBase) }
+    }
+
+    /** 令牌能不能发给这台主机。令牌为空、或主机判定不出来时都不算"换了主机"。 */
+    private fun isSameHost(host: String): Boolean {
+        if (host.isBlank()) return true
+        val recorded = tokenHostFor()
+        if (recorded.isBlank()) return true
+        return recorded == host
+    }
+
+    /**
+     * 握手成功后的落地动作。
+     *
+     * 这里做三件必须做的事：
+     *   ① 记下这次真正用的主机（换主机检测的依据）+ 升级令牌；
+     *   ② 把握手学到的候选地址（局域网/USB/异地）持久化 —— 下次那两条主地址失效时，
+     *      它们是仅有的救命线索（路由器换 DHCP 租约的实际事故就是靠这个兜住的）；
+     *   ③ 时钟偏差校正（页面里的时间要与电脑一致）。
+     */
+    private fun applyHandshake(
+        cand: LinkCandidate,
+        hs: Bridge.Handshake,
+        latencyMs: Long,
+        previousTokenHost: String
+    ): Boolean {
+        if (hs.bridgeToken.isNotBlank()) {
+            prefs.token = hs.bridgeToken
+            // 令牌主机怎么记，取决于这次走的是哪条路：
+            //   · 局域网/异地 = 人不在电脑边、真正靠令牌鉴权的场景 → 记这台主机的实名；
+            //   · USB(回环) = 插着线、本机不需要令牌。若这里改成记 127.0.0.1:3080，
+            //     那么"插线连一次、再拔线走局域网"就会因为主机变了而白白清掉
+            //     已经配对好的局域网令牌 —— 用户得重新扫码，这是本可避免的摩擦。
+            //     所以 USB 下把登记主机**还原**成清令牌前的那个（若之前没有，就记为回环）。
+            val usbLoopback = cand.mode == LinkMode.USB
+            prefs.tokenHost = when {
+                usbLoopback && previousTokenHost.isNotBlank() -> previousTokenHost
+                else -> Link.hostPort(cand.base)
+            }
+        }
+        prefs.lastGoodBase = cand.base
         if (hs.serverTime > 0) prefs.clockSkewMs = hs.serverTime - System.currentTimeMillis()
 
-        val url = Bridge.entryUrl(ep.base, hs.mode, hs.bridgeToken)
-        Log.d(TAG, "入口地址: $url")
+        // 持久化本次握手学到的候选：下次启动时它们会一起参与并发探测。
+        if (hs.lanBases.isNotEmpty()) {
+            val merged = (listOf(cand.base) + hs.lanBases).filter { it.isNotBlank() }
+            prefs.lanHints = merged.take(Link.MAX_HINTS)
+            BridgeLog.info("登记局域网候选 ${merged.size} 个: " + merged.joinToString(", "))
+        }
+        if (hs.usbBase.isNotBlank()) prefs.usbHints = listOf(hs.usbBase)
+
+        // 以链路类型决定带不带令牌（USB 回环不需要，局域网/异地必须带）
+        val url = Bridge.entryUrlForMode(cand.base, cand.mode, hs.bridgeToken.ifBlank { prefs.token })
+        // 入口地址带 ?k=，绝不能明文进日志
+        BridgeLog.info("入口地址: " + BridgeLog.maskSecrets(url))
+        val modeLabel = linkModeLabel(cand.mode)
         runOnUiThread {
-            val label = if (hs.desktopAlive) getString(R.string.status_desktop) else getString(R.string.status_bridge)
-            setStatus(Status.OK, label, "${ep.label} · ${hs.mode} · ${ep.latencyMs}ms")
+            val who = if (hs.desktopAlive) getString(R.string.status_desktop) else getString(R.string.status_bridge)
+            setStatus(
+                Status.OK,
+                "$modeLabel · $who",
+                if (latencyMs > 0) getString(R.string.status_link_detail, modeLabel, cand.label, latencyMs)
+                else "$modeLabel · ${cand.label}"
+            )
             showWelcome(false)
             if (loadedEntry != url || binding.webView.url.isNullOrBlank()) {
                 loadedEntry = url
@@ -1397,10 +1601,34 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    private fun fail(message: String): Boolean {
-        Log.w(TAG, "连接失败: $message")
-        runOnUiThread { setStatus(Status.BAD, getString(R.string.status_idle), message) }
-        return false
+    /**
+     * 连接方式的中文/本地化显示名。
+     *
+     * 单独一个函数是刻意的：界面状态、日志、提示都从它取名，
+     * 避免同一件事在三处写成"USB / usb / 数据线"三种措辞。
+     */
+    private fun linkModeLabel(mode: LinkMode): String = getString(
+        when (mode) {
+            LinkMode.USB -> R.string.link_mode_usb
+            LinkMode.LAN -> R.string.link_mode_lan
+            LinkMode.REMOTE -> R.string.link_mode_remote
+        }
+    )
+
+    /**
+     * 统一的连接失败展示：一句话（哪一层失败）+ 一句可操作建议。
+     *
+     * @param quiet 看门狗自动重连时用 true —— 那时界面本来就在"正在重连"，
+     *   再弹一个 Toast 只会打扰用户（可能正在打字）。
+     */
+    private fun showConnectFailure(outcome: ConnectOutcome, quiet: Boolean = false) {
+        val brief = outcome.detail.ifBlank { getString(R.string.err_handshake) }
+        val advice = outcome.advice.ifBlank { getString(R.string.err_addr_may_changed) }
+        // 失败时也把"本来打算走哪条路"说清楚：USB 走不通（没连线）与
+        // 局域网走不通（网段变了/不在同一 Wi-Fi）需要用户做的事完全不同。
+        val via = outcome.mode?.let { "（尝试通道：${linkModeLabel(it)}）" } ?: ""
+        setStatus(Status.BAD, getString(R.string.status_idle), "$brief$via\n$advice")
+        if (!quiet) toast(advice)
     }
 
     // ---------------------------------------------------------------- 看门狗
@@ -1452,7 +1680,8 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // ③ 端到端探活：失败达阈值就自动重连
-                val ms = withContext(Dispatchers.IO) { Bridge.probe(base, 3000) }
+                //    超时用与择优同一个 1.2s：探活每 4s 一次，没必要为一次探测挂 3s。
+                val ms = withContext(Dispatchers.IO) { Bridge.probe(base, Bridge.PROBE_TIMEOUT_MS.toInt()) }
                 if (ms != null) {
                     if (failures > 0) {
                         BridgeLog.heal("连接已恢复", "第 $failures 次失败后")
@@ -1468,7 +1697,11 @@ class MainActivity : AppCompatActivity() {
                     if (failures % 6 == 0) {
                         if (allowRecovery("自动重连")) {
                             BridgeLog.heal("自动重连", "第 $failures 次失败")
-                            withContext(Dispatchers.IO) { doConnect() }
+                            // 刻意**重新择优全部候选**而不是只重连 lastGood：
+                            // 数据线被拔、或电脑换了 Wi-Fi，都会让"上次那条路"永久失效，
+                            // 只重连它等于在一棵死树上反复撞（这正是用户反馈的"拔线就连不上"）。
+                            val again = withContext(Dispatchers.IO) { doConnect() }
+                            if (!again.ok) showConnectFailure(again, quiet = true)
                         } else {
                             BridgeLog.info("自动重连被闸门拦下（用户操作中/冷却中/加载中）")
                         }
@@ -1882,13 +2115,23 @@ class MainActivity : AppCompatActivity() {
     /** 兼容两种格式：紧凑 dsh1|host:port|token，以及早期 JSON。 */
     private fun applyPairing(raw: String) {
         val parsed = Bridge.parsePairing(raw)
-        Log.d(TAG, "解析配对: $parsed")
+        // ⚠️ 解析结果里第二段就是令牌，**不能整体打印**（旧代码直接打了 $parsed）。
+        // 只记"解析成功/失败 + 目标主机 + 有没有令牌"，其中主机是重连时必须知道的，
+        // 而令牌只留前 4 位用于判断"是不是换了一份"。
         if (parsed == null) {
+            BridgeLog.warn("配对内容无法识别（长度=${raw.length}）")
             toast(getString(R.string.pair_bad_qr))
             return
         }
+        val host = Link.hostPort(parsed.first)
+        BridgeLog.info("解析配对: 目标主机=$host 带令牌=${!parsed.second.isNullOrBlank()} " +
+            BridgeLog.maskSecrets(parsed.second?.let { "token=$it" } ?: ""))
         prefs.baseUrl = parsed.first
-        parsed.second?.takeIf { it.isNotBlank() }?.let { prefs.token = it }
+        parsed.second?.takeIf { it.isNotBlank() }?.let {
+            prefs.token = it
+            // 记下令牌属于哪台主机：换主机时据此清空令牌（见 handshakeWithFallback）
+            prefs.tokenHost = host
+        }
         toast(getString(R.string.pair_ok))
         connect(manual = true)
     }
@@ -2042,8 +2285,15 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "提交配对码: ${code.take(2)}******")
         setStatus(Status.CONNECTING, getString(R.string.status_searching), "正在用配对码换取连接信息…")
         lifecycleScope.launch {
-            // 配对码要通过某个已知的桥接地址提交，本机 / 已配对 / 局域网依次尝试
-            val claimBases = Bridge.buildCandidates(prefs.baseUrl, prefs.lastGoodBase)
+            // 配对码要通过某个已知的桥接地址提交。候选里刻意带上"已知局域网"：
+            // 已配对地址与上次可用都可能已经失效（路由器换租约），而配对码是用户
+            // 唯一还能用的兜底手段，必须把所有线索都试一遍，否则就成了"想重新配对都配不了"。
+            val claimBases = Bridge.buildCandidates(
+                prefs.baseUrl, prefs.lastGoodBase,
+                remoteBase = prefs.remoteBase,
+                lanHints = prefs.lanHints,
+                usbHints = prefs.usbHints
+            )
             val result = withContext(Dispatchers.IO) {
                 var last = Bridge.ClaimResult(false, error = getString(R.string.code_need_bridge))
                 for (cand in claimBases) {
@@ -2065,8 +2315,16 @@ class MainActivity : AppCompatActivity() {
                 prefs.remoteBase = Bridge.normalize(it)
                 BridgeLog.info("异地通道已登记: $it")
             }
-            result.bases.firstOrNull()?.let { prefs.baseUrl = Bridge.normalize(it) }
-            if (result.token.isNotBlank()) prefs.token = result.token
+            result.bases.firstOrNull()?.let {
+                prefs.baseUrl = Bridge.normalize(it)
+                // 配对返回的全部候选都登记下来：它们是下次主地址失效时的唯一线索
+                prefs.lanHints = result.bases.map { b -> Bridge.normalize(b) }.take(Link.MAX_HINTS)
+                BridgeLog.info("配对登记候选 ${result.bases.size} 个")
+            }
+            if (result.token.isNotBlank()) {
+                prefs.token = result.token
+                prefs.tokenHost = Link.hostPort(result.bases.firstOrNull() ?: prefs.baseUrl)
+            }
             toast(getString(R.string.code_ok))
             connect(manual = true)
         }
