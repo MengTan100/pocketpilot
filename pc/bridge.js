@@ -142,6 +142,9 @@ function lanAddresses() {
     for (const entry of list || []) {
       if (entry.family !== 'IPv4' || entry.internal) continue;
       if (entry.address.startsWith('169.254.')) continue;
+      // 排除 Tailscale 的 CGNAT 段（100.64.0.0/10）：装了 Tailscale 时它常被排在
+      // WLAN 前面当"首选地址"，但手机根本连不到那个地址。
+      if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(entry.address)) continue;
       out.push({ name, address: entry.address });
     }
   }
@@ -188,7 +191,18 @@ function applyModeRules(merged) {
   //   error: --host 0.0.0.0 is intentionally not supported yet for safety
   // 因此上游 DSH 无论哪种模式都只绑回环，"对外可用"由 Bridge 的反向代理负责。
   merged.dshHost = '127.0.0.1';
-  merged.lanAddresses = lanAddresses();
+  // ⚠️ 必须**实时**取值，不能存一次性快照。
+  // 踩过的坑：这里原本是 merged.lanAddresses = lanAddresses()，只在启动时算一次。
+  // 家里路由器重启后 DHCP 把地址从 192.168.0.8 换成 192.168.0.4，桥接却继续把旧
+  // 地址写进二维码与 /handshake —— 手机扫码后永远连不上，只有插 USB 走 adb reverse
+  // 的 127.0.0.1 才通（症状就是"不插线登不上"）。
+  // 改成 getter 后，/pair.json、二维码、状态页、运行时快照、/handshake 等消费点
+  // 全部自动拿到当前地址，不必逐个改。
+  Object.defineProperty(merged, 'lanAddresses', {
+    get: () => lanAddresses(),
+    enumerable: true,
+    configurable: true,
+  });
   return merged;
 }
 
