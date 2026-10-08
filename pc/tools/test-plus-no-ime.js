@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:062de90960​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 精确验证：点「+」时键盘不弹。
 // 用 CDP 在「+」按钮上派发 pointerdown + click（会触发前端 onPlusTouch → App 开始"按住键盘"），
 // 并高频采样 innerH（键盘顶起则缩小），判断键盘有没有弹出来。

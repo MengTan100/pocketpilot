@@ -52,11 +52,5 @@
   "engines": {
     "node": ">=20"
   },
-  "_comment": "仓库根包：只为让 `dsh plugin add github:MengTan100/pocketpilot` 这类『填仓库地址安装』可用 —— 真正的插件源码在 pc/dsh-plugin-phone-bridge/，两个 package.json 的 dsh 字段必须保持一致。",
-  "_watermark": {
-    "project": "dsh-phone-bridge",
-    "origin": "8db5189c93",
-    "license": "MIT",
-    "notice": "见 WATERMARK.md"
-  }
+  "_comment": "仓库根包：只为让 `dsh plugin add github:MengTan100/pocketpilot` 这类『填仓库地址安装』可用 —— 真正的插件源码在 pc/dsh-plugin-phone-bridge/，两个 package.json 的 dsh 字段必须保持一致。"
 }

@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:8be48a5dc1​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 完整流程：点模型选择器 → 点「模型 …」项 → 看带搜索框的列表是否出现、键盘是否弹。
 (function () {
   function findModelBtn() {

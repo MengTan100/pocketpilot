@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:40d30e5d9b​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 证据 6：返回「+」按钮此刻应该在**屏幕**上点哪里（动态坐标，随键盘引起的布局位移自适应）。
 // 换算：屏幕x = cssX * dpr；屏幕y = 152 + cssY * dpr（152 为 WebView 在屏幕上的顶部偏移，已实测验证）
 (function () {

@@ -18,12 +18,9 @@ pc/logs/
 # ---------------------------------------------------------------- 第三方二进制
 # 这些都不是本项目的产物，且体积巨大（合计约 500MB），必须由使用者自行获取：
 #   cloudflared.exe —— Cloudflare 官方二进制（异地通道用）
-#   operit-base.apk —— 早期弃用方案的第三方 App 安装包
 pc/tools/bin/
 apk/
-phone/toolpkg_cache/
 *.apk
-*.toolpkg
 
 # ---------------------------------------------------------------- 测试残留（隐私）
 # ui.xml 是 uiautomator 的界面转储，**内容就是整段对话全文**；
@@ -39,8 +36,6 @@ security-denylist.local.txt
 phone/*.png
 phone/*.log
 phone/logs/
-# 已构建的 Operit 工具包与第三方 App 私有数据副本
-phone/*.toolpkg
 phone/PackageManager.xml.*
 phone/apk-icons/
 # 应用图标生成的中间产物
@@ -68,25 +63,8 @@ desktop.ini
 *.swp
 *~
 
-# ---------------------------------------------------------------- 已废弃方案的侵入式工具
-# 这些脚本属于**早期废弃的 Operit ToolPkg 方案**，它们通过 root 读写另一个第三方应用
-# （com.ai.assistance.operit）的私有数据（shared_prefs/PackageManager.xml 等）来完成安装。
-# 在自己的设备上做这是你的自由，但**公开发布**会被读成"篡改他人 App"，
-# 而且该方案已整体废弃（现方案是手机端独立 App）。故不上传，仅保留在本地。
-phone/toolpkg-src/
-phone/build-toolpkg.js
-phone/install-toolpkg.js
-phone/patch-registry.js
-phone/purge-legacy.js
-phone/purge-legacy.sh
-phone/test-toolpkg.js
-phone/install-step1.sh
-phone/install-step2.sh
-phone/install-step3.sh
-
 # ---------------------------------------------------------------- 其它本机文件
 # 手机端连接信息（明文地址/令牌）
-phone/set-lan-env.js
 phone/.env
 .env
 

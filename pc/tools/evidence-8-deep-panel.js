@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:80edb59d22​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 证据 8：深度 dump 面板——把 listbox 内所有后代节点（含隐藏的）逐层导出，
 // 用 querySelectorAll 而非 innerText（innerText 会漏掉 display:none 的内容）。
 // 目的：判断「添加(文件/目标/计划/反馈)」组是被 CSS 隐藏，还是根本没渲染。

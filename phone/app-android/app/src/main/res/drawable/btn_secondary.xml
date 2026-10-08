@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   SPDX-License-Identifier: MIT
-  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-  wm:8d8e1d2eff​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 -->
 <!-- 次按钮：描边风格，与主按钮区分层级 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"

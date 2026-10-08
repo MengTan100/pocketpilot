@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:4f8a392fd0​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 验证「+」按钮在**不受任何注入干预**时的原生开合行为。
 // 判据用它自己的 aria-expanded，以及页面里 role=listbox 的数量。
 (function () {

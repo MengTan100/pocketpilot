@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:4c67d20aa7​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 package com.dsh.bridge
 
 import android.annotation.SuppressLint
@@ -220,7 +218,7 @@ class MainActivity : AppCompatActivity() {
         BridgeLog.init(this)
         BridgeLog.info("启动: base=${prefs.baseUrl} lastGood=${prefs.lastGoodBase}")
         // 出处指纹（水印第 4 层）：同一标识在日志、APK 资源、桥接 runtime 里各出现一次，
-        // 任何一份被拷走的构建都能据此确认来源。见 WATERMARK.md。
+        // 任何一份被拷走的构建都能据此确认来源。见 README.md。
         BridgeLog.info("origin: ${getString(R.string.project_origin_marker)}")
 
         // Android 15（targetSdk 35）强制 edge-to-edge，statusBarColor 已失效。
@@ -286,7 +284,7 @@ class MainActivity : AppCompatActivity() {
 
     /** 完整声明地址：由仓库地址推出来，填好 project_repo_url 一处即可。 */
     private fun disclaimerUrl(): String =
-        getString(R.string.project_repo_url).trimEnd('/') + "/blob/main/DISCLAIMER.md"
+        getString(R.string.project_repo_url).trimEnd('/') + "/blob/main/README.md"
 
     /** 未同意当前版本时弹出条款门禁，并把入口按钮禁掉。 */
     private fun enforceTerms() {
@@ -320,7 +318,7 @@ class MainActivity : AppCompatActivity() {
                 prefs.termsAcceptedVersion = TERMS_VERSION
                 setEntryEnabled(true)
             }
-            // 「查看完整声明」= 打开仓库里的 DISCLAIMER.md（含完整条款与更多细节）
+            // 「查看完整声明」= 打开仓库 README 的「免责声明」一节（含完整条款与更多细节）
             .setNeutralButton(R.string.terms_full) { _, _ -> openUrl(disclaimerUrl()) }
 
         if (required) {

@@ -8,46 +8,32 @@
 > （原因：直接把别人的产品名当自己的应用名，属于商标使用不当。）
 
 > 🔐 **准备开源 / 参与开发前必读**：
-> - [DISCLAIMER.md](DISCLAIMER.md) —— 免责与安全声明（**这个工具在设计上就等于给手机远程执行你电脑的能力**，请先理解再使用）
+> - [免责声明](#免责声明) —— **这个工具在设计上就等于给手机远程执行你电脑的能力**，请先理解再使用
 > - [SECURITY.md](SECURITY.md) —— 安全与隐私规范（这里曾有明文访问令牌、真实姓名、设备序列号、内网 IP 和整段对话的界面转储被带进仓库）
-> - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) —— 第三方组件与许可证（全部为 Apache-2.0 / MIT / ISC，**无强制开源组件**）
-> - [WATERMARK.md](WATERMARK.md) —— 原创水印说明（六层水印；**规则全部公开、只写在注释里**，不是藏后门）
+> - [第三方组件与许可证](#第三方组件与许可证) —— 全部为 Apache-2.0 / MIT / ISC，**无强制开源组件**
 > - [LICENSE](LICENSE) —— MIT
 >
-> 提交前请跑 `node tools/security-check.mjs`（8 项检查，含水印完整性）与
-> `node tools/watermark-check.mjs`；`git config core.hooksPath .githooks` 可自动执行。
+> 提交前请确保 GitHub Actions 的 `build` 工作流全绿（`.github/workflows/build.yml`：Android 构建 + 仓库卫生检查）。
 
 ---
 
 ## 1. 为什么要这样改
 
-原方案是社区 ToolPkg `sidebar_deepseek_harness`（`com.operit.deepseek_harness` v0.7.2）：
-它在**手机的 Linux 容器里**安装 Node + pnpm，装 `@deepseek-ai/dsh@latest`，再编译 `node-pty`
-原生模块，然后跑一份完整的 DSH Web（`127.0.0.1:3081`），最后用 WebView 显示。
+手机不可能承担 Agent 运行时：没有 PC 的编译链、项目文件、本地 MCP 与算力，
+把 Node + 完整 DSH 塞进手机既脆弱又昂贵。
 
-这条路在 Android 上天然脆弱，加载报错几乎必然：
-
-| 先天短板 | 具体表现 |
-|---|---|
-| 原生模块无预编译包 | `node-pty@1.1.0` 没有 Android/Linux-ARM64 的 prebuild，必须现编译；容器里常缺 `build-essential` |
-| 编译产物不可移植 | 容器里 `pty.node` 是悬空 symlink（指向已删除的 `obj.target`），必须再改写成实体文件 |
-| 依赖树在手机上重建 | `pnpm install` 的 `allowBuilds` 审批、`ERR_PNPM_IGNORED_BUILDS` 等失败点极多 |
-| 存储与内存代价 | 仅编译器就约 113 MB，加上 Node/pnpm/DSH 本体，手机不堪重负 |
-| 算力与工具链缺失 | 手机端没有 PC 的编译链、项目文件、本地 MCP 与算力 |
-
-**改造思路**：手机端不再运行任何运行时，只保留「指挥 + 展示」；真正的 Agent 跑在 PC 上，
-两边通过 **USB（adb reverse）** 或 **局域网** 打通。
+**所以本项目把职责切开**：手机端不运行任何运行时，只保留「指挥 + 展示」；
+真正的 Agent 跑在 PC 上，两边通过 **USB（adb reverse）** 或 **局域网** 打通。
 
 ---
 
 ## 2. 架构
 
 ```
-┌──────────────────── 手机 (Operit AI) ────────────────────┐
-│  ToolPkg: com.operit.dsh_pc_bridge                       │
-│    · 工具集：dsh_pc_run / dsh_pc_submit / dsh_pc_task …   │
-│    · 只依赖 Tools.Net.http（QuickJS 沙箱内，无原生依赖）  │
-│    · 手机浏览器可直接打开 PC 的 DSH 完整界面              │
+┌──────────── 手机 (PocketPilot App · Android) ─────────────┐
+│  · 全屏 WebView：内嵌 PC 端 DSH 的真实界面（指挥 + 展示）  │
+│  · 扫码配对、令牌本地加密保存、状态探测与自动重连          │
+│  · 手机浏览器也可直接打开 PC 的 DSH 完整界面               │
 └──────────────────────────────────────────────────────────┘
         │ ① USB: adb reverse tcp:3080 / tcp:3081
         │ ② 局域网: http://<PC-IP>:3080
@@ -105,41 +91,32 @@ DSH 的 Web 入口用「进程内随机 launch token」鉴权：启动时打印
 
 ### 3.2 手机端
 
-**已通过 root 自动部署完成**，无需在手机上手动导入。重装或换版本时，在 PC 上一条命令：
-
-```bat
-node phone\install-toolpkg.js phone\com_operit_dsh_pc_bridge-v1.2.0.toolpkg
-:: 卸载：追加 --uninstall
-:: 多设备并存时：追加 --serial <设备序列号>
-```
+1. 从 [Releases](https://github.com/MengTan100/pocketpilot/releases) 下载 `app-release.apk`，装到手机（Android 8.0+）。
+2. 电脑上装 DSH 插件（二选一）：
+   ```bash
+   dsh plugin add github:MengTan100/pocketpilot            # 在线
+   # 离线：下载 Releases 里的 dsh-plugin-phone-bridge-*.zip，解压后按本地路径安装
+   dsh plugin add <解压后的目录>
+   ```
+3. 运行 `pc\start-bridge.bat`（USB 模式），手机上打开 App **扫描弹窗里的二维码**即完成配对。
 
 #### 面板形态：把 PC 端界面直接嵌进手机
 
-侧栏面板的主体是一个**占满屏幕的 WebView**，直接加载 PC 端 DSH 的真实界面 ——
+App 主体是一个**占满屏幕的 WebView**，直接加载 PC 端 DSH 的真实界面 ——
 在手机上就能用原生 UI 操作电脑（会话、文件、工具审批、Sub-Agent 全部可用），
 而不是"输入任务 → 看文本回执"。
 
-这套 UI 方案直接复用旧插件 `sidebar_deepseek_harness` 的成熟做法：
-
-| 复用项 | 说明 |
+| 实现项 | 说明 |
 |---|---|
-| WebView 组件 | `ctx.createWebViewController()` + `UI.WebView({ useWideViewPort, loadWithOverviewMode, supportZoom:false, … })` |
-| 手机端布局 CSS | 原样携带 `resource/mobile_optimize.css`，经 `controller.evaluateJavascript()` 注入，用 `html[data-dsh-compact]` 命中紧凑样式 |
-| 加载地址形态 | 旧插件加载 `http://127.0.0.1:3081`（手机 Linux 容器内的 DSH）；本插件**加载同一地址**，但 `adb reverse tcp:3081 tcp:3081` 已把它指向 PC 的 DSH —— 所以 UI 代码几乎零改动 |
-
-两处关键差异：
-
-1. **不经过 `ctx.callTool`**：实测在面板内调用同包工具会卡死
-   （日志先 `Tool not found: dsh_pc_open_ui`，随后 `Auto-activating` 成功便再无返回）。
-   面板改为与工具同处一个 QuickJS 沙箱、直接用 `Tools.Net.http` 请求桥接 `/handshake`。
-2. **去掉 Linux 容器时代的逻辑**：安装 / 更新 / 重置 / 进度覆盖层全部移除，
-   换成"握手拿 token → 加载 PC 界面 → 刷新"。
+| 内嵌界面 | WebView 加载 `http://127.0.0.1:3081`；USB 模式下 `adb reverse tcp:3081 tcp:3081` 已把它指向 PC 的 DSH |
+| 手机端布局 CSS | `resource/mobile_optimize.css` 由 App 在 `onPageStarted` 注入，用 `html[data-dsh-compact]` 命中紧凑样式 |
+| 插件入口 | DSH 侧栏底部「手机连接」：点击弹出配对二维码，并显示桥接状态 |
 
 #### 数据源：优先连桌面端实例（否则只能看到新会话）
 
 这里有个容易踩的坑：手机若连**桥接实例**（`:3081`，`bridge` profile），它虽然与会话存储
 共享、`session/list` 能列出全部会话，但**不知道"你当前在哪个会话"，也没有实时流** ——
-打开就是一张新会话页，看不到正在跑的对话。
+打开就是一张新会话页，看不到正在跑的对话。`bridge` profile 只保留 `dsh-base` + `dsh-web-app`。
 
 真正持有"当前会话 + 正在跑的任务 + 待审批弹窗"的是**桌面端实例**（`:19387`，`desktop` profile）。
 它的 Web 入口用进程内随机 launch token 鉴权，token 不落盘、重启即变，外部拿不到。
@@ -171,48 +148,13 @@ payload   = { version: 1, authority, issuedAt, expiresAt }
 - 桌面端未运行（或局域网模式）时，`/desktop` 自动回退到桥接实例，面板不会白屏；
 - 自签密钥只在本机读取，不出网、不写日志明文。
 
-部署器做的事（机制均已在真机验证）：
+USB 模式下**无需配置任何环境变量**：App 会自动向 `http://127.0.0.1:3080/handshake`
+取得桥接令牌并缓存；插件侧也用它取配对信息。
 
-1. 把 `.toolpkg` 投到 `/sdcard/Android/data/com.ai.assistance.operit/files/packages/`；
-2. 解包到 `/data/data/com.ai.assistance.operit/files/toolpkg_cache/<容器ID>-<hash8>/`
-   （`hash8` = Java `String.hashCode()` 的无符号十六进制）；
-3. 写 `.toolpkg-cache-signature`：
-   `external|<包手机绝对路径>|<字节数>|<毫秒时间戳>|<版本>|<入口>`（无末尾换行）；
-4. 修正属主/权限/SELinux 标签（`u0_a488` / `700|600` / `app_data_file` + 应用类别）；
-5. 停掉 Operit，改写 `shared_prefs/…PackageManager.xml` 的 `imported_packages` 与
-   `toolpkg_subpackage_states`，再重启应用。
+局域网模式请在 App 的「设置」里填：
 
-USB 模式下**无需配置任何环境变量**：插件会自动向 `http://127.0.0.1:3080/handshake`
-取得桥接令牌并缓存。
-
-局域网模式请在插件的环境配置里填：
-
-- `DSH_PC_BRIDGE_URL` = `http://<PC的局域网IP>:3080`（如 `http://<PC的局域网IP>:3080`）
-- `DSH_PC_BRIDGE_TOKEN` = PC 端 `bridge.config.json` 里的 `bridgeToken`
-
-### 3.2.1 旧插件的处理（重要）
-
-原 `com.operit.deepseek_harness` 已**解除注册并隔离**。原因不只是"加载报错"，
-而是它会让 Operit 在启动时直接崩掉：
-
-```
-E/CrashReportActivity: java.lang.OutOfMemoryError: Failed to allocate a 56404528 byte allocation
-   at com.ai.assistance.operit.core.tools.ToolResultData.toJson
-   at ...ToolPkgToolLifecycleBridge.parseToolResultJson
-```
-
-它的 dashboard 会自动 dispatch 一个 action，工具结果高达数十 MB，序列化时 OOM。
-
-隔离位置（文件未删除，可恢复）：
-
-```
-/sdcard/Download/dsh-bridge/quarantine-legacy/   旧插件缓存与 .toolpkg
-/sdcard/Download/dsh-bridge/backup-20261007/     改动前的注册表与包副本
-```
-
-恢复：把 `quarantine-legacy/` 里两项放回原位，并用
-`backup-20261007/com.ai.assistance.operit.core.tools.PackageManager.xml`
-覆盖 `/data/data/com.ai.assistance.operit/shared_prefs/` 下同名文件，然后重启 Operit。
+- 桥接地址 = `http://<PC的局域网IP>:3080`
+- 桥接令牌 = PC 端 `bridge.config.json` 里的 `bridgeToken`（也可直接扫码配对，自动带入）
 
 
 ### 3.3 立刻可用（零开发）
@@ -311,14 +253,8 @@ proxy POST /api/session/prompt -> 200               ← 手机端直接发消息
 | 工具 | 用途 |
 |---|---|
 | `dsh_pc_status` | 连通性自检：DSH 状态、隧道、工作区、可用入口 |
-| `dsh_pc_configure` | 持久化桥接地址与令牌（可立即验证） |
-| `dsh_pc_run` | 下发任务并**同步**等待最终回复（适合 ≤2 分钟） |
-| `dsh_pc_submit` | **异步**提交，立即返回 `taskId` |
+| `dsh_pc_submit` | **异步**提交任务，立即返回 `taskId` |
 | `dsh_pc_task` | 查询异步任务状态 / 结果；不传 ID 则列最近任务 |
-| `dsh_pc_sessions` | 列出 PC 端最近会话 |
-| `dsh_pc_history` | 读取某会话最近对话 |
-| `dsh_pc_open_ui` | 取 PC 端 DSH 界面带鉴权地址 |
-| `usage_advice` | 使用建议（纯提示） |
 
 长任务请用 `dsh_pc_submit` + `dsh_pc_task` 轮询，避免手机端 HTTP 等待超时。
 
@@ -374,8 +310,8 @@ POST /api/<method>
    用干净的 `bridge` profile（仅 `dsh-base` + `dsh-web-app`，走全局一致版本）已验证稳定。
 7. **隧道冲突要自愈**：若手机侧端口已指向别处（例如早期手工把 `3081` 映射到桌面端 `19387`），
    守护会检测到 `remote≠local` 并拆除重建。
-8. **`.toolpkg` 就是 ZIP，且条目名必须是正斜杠**：反斜杠会被 Android 当成文件名的一部分，
-   导致包加载失败。`phone\build-toolpkg.js` 用最小 ZIP 写入器保证这一点。
+8. **Android 资源文件路径要用正斜杠**：反斜杠会被当成文件名的一部分，
+   打包或加载时静默失败；脚本生成资源一律写 `/`。
 9. **Windows 批处理必须避开非 ASCII**：早期两个 `.bat` 用 UTF-8 无 BOM 写了中文，
    而 cmd.exe 默认按 GBK(936) 读文件 → 中文全乱码 → `if (...)` 直接语法错，
    脚本还没走到 `pause` 就崩掉，表现为**双击一闪而过**且无任何输出。
@@ -430,7 +366,7 @@ POST /api/<method>
 | 缩短首帧等待 | 自动连接延时 300 ms → 80 ms（握手本身只要 ~10 ms） |
 | 可交互探测 | `probeInteractive()` 轮询输入框出现时刻，量化体感延迟而非只看 `onPageFinished` |
 
-真机实测（`~/dsh-phone-bridge/pc/logs/bridge.log` 与手机 operit.log 同源对照）：
+真机实测（PC 端 `pc/logs/bridge.log` 与手机 App 日志同源对照）：
 
 ```
 page finished in 832ms      ← DOM 就绪
@@ -451,7 +387,7 @@ reuse loaded webview (no rebuild)   ← 重开面板不重建
 | `dsh_pc_status` 报握手失败 | PC 端守护没启动，或 USB 未授权调试；跑 `start-bridge.bat` 看日志 |
 | 报「桥接要求令牌」 | 局域网模式：填 `DSH_PC_BRIDGE_TOKEN`；或改用 USB 模式 |
 | 任务一直 `running` 不返回 | 用 `dsh_pc_task` 看是否卡在审批；确认 `permissionPreset` 已生效（见 §6.4） |
-| DSH UI 打开是 401 | token 已随实例重启变化；重新调用 `dsh_pc_open_ui` / `/handshake` |
+| DSH UI 打开是 401 | token 已随实例重启变化；在 App 里刷新面板或重新扫码配对 |
 | 局域网访问 `/api` 被拒 | 用 `start-bridge-lan.bat` 启动（会把各网卡地址加入 `--trusted-host`），并放行防火墙 3080/3081 |
 | agent 一提交就报 `reading 'length'` | 检查 `dshProfile` 是否为 `bridge`（见 §6.6） |
 
@@ -460,36 +396,27 @@ reuse loaded webview (no rebuild)   ← 重开面板不重建
 ## 8. 目录结构
 
 ```
-dsh-phone-bridge/
+pocketpilot/
+├─ phone/app-android/            手机端 App（Kotlin + WebView）
+│  ├─ app/src/main/java/com/dsh/bridge/   主界面 / 桥接客户端 / 设置 / 日志 / 扫码
+│  ├─ app/src/main/res/                  布局与文案（values 英文兜底 + values-zh 中文）
+│  ├─ tools/make-icon.py                 应用图标生成脚本
+│  ├─ gradlew / gradlew.bat              标准 Gradle Wrapper（构建可复现）
+│  └─ gradle/wrapper/                    Wrapper 配置与 gradle-wrapper.jar
 ├─ pc/
-│  ├─ bridge.js                桥接守护（控制面 + 隧道 + 任务队列）
-│  ├─ lib/dsh-client.js        DSH 实例客户端（token/Cookie/RPC/权限预设）
-│  ├─ tools/rpc-probe.js       独立诊断：对任意实例跑一次完整会话往返
-│  ├─ bridge.config.json       运行配置（含 bridgeToken）
-│  ├─ start-bridge.bat         USB 模式启动
-│  ├─ start-bridge-lan.bat     局域网模式启动
-│  ├─ runtime/ logs/           状态文件与日志
-├─ phone/
-│  ├─ toolpkg-src/             手机端 ToolPkg 源码（manifest + dist）
-│  ├─ build-toolpkg.js         打包器（正斜杠 ZIP）
-│  ├─ test-toolpkg.js          PC 端仿真宿主单测（导入手机前自检）
-│  ├─ install-toolpkg.js       root 直装/卸载部署器（本次安装即用它）
-│  ├─ patch-registry.js        注册表：注册新包 + 停用旧插件
-│  ├─ purge-legacy.js          注册表：彻底移除旧插件条目
-│  ├─ install-step1..3.sh      本次安装的分步脚本（保留备查）
-│  ├─ PackageManager.xml.*     注册表原件 / 各阶段产物
-│  └─ com_operit_dsh_pc_bridge-v1.0.0.toolpkg
-└─ README.md
+│  ├─ bridge.js                  桥接守护（控制面 + 隧道 + 任务队列）
+│  ├─ lib/                       DSH 客户端 / 反向代理 / 隧道 / 桌面端会话自签
+│  ├─ tools/rpc-probe.js         独立诊断：对任意实例跑一次完整会话往返
+│  ├─ dsh-plugin-phone-bridge/   DSH 前端插件（侧栏「手机连接」+ 配对二维码）
+│  ├─ start-bridge.bat           USB 模式启动
+│  ├─ start-bridge-lan.bat       局域网模式启动
+│  └─ runtime/ logs/             运行状态与日志（不入仓）
+├─ docs/index.html               图形化发布页（GitHub Pages）
+├─ .github/workflows/build.yml   CI：Android 构建 + 仓库卫生检查
+└─ README.md / CONTRIBUTING.md / SECURITY.md / LICENSE / …
 ```
 
-## 9. 已回滚的试验痕迹
-
-为定位根因做过的临时改动均已复原或隔离：
-
-- `~/.dsh/profiles/web/package.json` 曾临时精简 bundles，已从 `.bak-bridge` 恢复原状。
-- 归因实验用的 `~/.dsh/profiles/probe`（headless 模板）可随时删除。
-
-## 10. 安全与隐私（开源前必读）
+## 9. 安全与隐私（开源前必读）
 
 **规则全文见 [SECURITY.md](SECURITY.md)；本节只讲怎么执行。**
 
@@ -500,18 +427,24 @@ dsh-phone-bridge/
 ### 提交前必跑
 
 ```bash
-node tools/security-check.mjs          # 退出码非 0 即不可提交
-git config core.hooksPath .githooks    # 一次性：让每次 commit 自动跑上面的检查
+./gradlew -p phone/app-android assembleDebug   # 手机端必须能构建
+node --check pc/bridge.js                      # 桥接语法自检
 ```
 
-检查 6 类：明文凭据、个人信息（绝对路径/姓名/序列号/私有网段）、禁止入仓的产物类型、
-Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启动状态恢复）、
-桥接端安全基线（令牌强度/常量时间比较/日志打码/`execFile`）、`.gitignore` 关键项。
+推送或开 PR 后，GitHub Actions 会自动跑 `.github/workflows/build.yml`：
 
-### 自己的值要永久拦住？写这里
+- `android`：JDK 17 + 仓库内 wrapper 构建 **release** APK，用 `aapt2 dump badging` 断言产物**不含** `application-debuggable`，并打印 APK 的 sha256；
+  （断言对象是 release 而不是 debug 变体 —— debug 默认就带 `application-debuggable`，断言它没有意义）
+- `hygiene`：仓库里**不得**出现 `*.jks/*.keystore/*.exe/*.msi/*.apk/*.zip` 等二进制，也不得出现
+  明显密钥形态：GitHub 个人访问令牌（`ghp_` 前缀）、GitHub 细粒度令牌（`github_pat_` 前缀）、
+  PEM 私钥头（`BEGIN … PRIVATE KEY`）、Gradle 签名口令赋值（`storePassword` 后跟冒号或等号）。命中即失败。
 
-`security-denylist.local.txt`（**已被忽略，不会入库**）——把姓名、网段、序列号、
-令牌等真实值一行一个写进去，检查脚本会逐行比对，以后再被写进代码就会被当场拦下。
+> 检查正则按"真实密钥的形态"收紧（前缀后必须跟 20 位以上字符），因此本 README 里对这些前缀的
+> 说明性文字**不会**触发 CI；但**真的**把令牌粘进代码或文档，一定会被拦下。
+
+### 自己的值不要写进代码
+
+姓名、网段、序列号、令牌这些真实值**一行都不要写进任何文件**；CI 的 `hygiene` job 会在 PR 上拦住明显密钥。
 
 ### 已按基线加固的项
 
@@ -528,9 +461,6 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 
 - 桥接端 URL/cookie 那条令牌比较仍是字符串比较，**建议统一到 `timingSafeEqual`**。
 - Cookie 建议补 `Secure` 标志。
-- 本 README 仍以**已废弃的 Operit ToolPkg 方案**为主线（第 3.2.1、8、9 节及其目录树里的
-  `PackageManager.xml.*`、`*.toolpkg` 均已删除），开源前应重写为当前独立 App 方案。
-
 - 桥接专用 profile 为 `~/.dsh/profiles/bridge`，**与桌面端 profile 隔离**，桌面端行为不变。
 
 
@@ -544,8 +474,108 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 - 需要做的是：**保留版权声明与许可证原文**，且**不得**用作者名义为你的衍生品背书。
 
 本项目**不提供任何担保**。它让手机能远程指挥你电脑上的 DSH（等于远程执行能力），
-请务必阅读 [DISCLAIMER.md](DISCLAIMER.md)（免责与安全声明）与 [SECURITY.md](SECURITY.md)（安全与隐私规范），
+请务必阅读 [免责声明](#免责声明) 与 [SECURITY.md](SECURITY.md)（安全与隐私规范），
 自行评估并承担暴露风险。
+
+---
+
+## 免责声明
+
+> 请在安装、运行或分发本项目之前完整阅读。一旦使用，即表示你已理解并接受下列全部内容。
+
+### 一、这个项目本质上是什么
+
+PocketPilot 让**手机能够指挥你电脑上正在运行的 DSH 会话**。从安全角度看，这意味着：
+
+> **它在设计上就提供了对你电脑的远程操作能力（远程执行命令、读写工作区文件）。**
+
+这不是缺陷，而是它的功能本身。也正因如此：
+
+- 拿不到访问令牌的人不该能连上；
+- 拿到访问令牌的人**就等于拿到了你电脑的操作权限**；
+- 令牌、配对码、二维码**都等同于密码**：不要截图发人、不要贴到群里、不要提交进仓库。
+
+### 二、免责（No Warranty / Limitation of Liability）
+
+1. 本软件按**"现状"（AS IS）**提供，不附带任何形式的明示或默示担保，包括但不限于
+   适销性、特定用途适用性、无中断、无错误、以及**不侵犯第三方权利**的担保。
+2. 在法律允许的最大范围内，作者与贡献者**不对任何**直接、间接、偶然、特殊、惩戒性或
+   后果性损害负责，包括但不限于：数据丢失或泄露、设备损坏、业务中断、利润损失、
+   因未授权访问导致的任何损失。
+3. **是否暴露、向谁暴露、暴露到什么范围，完全由你决定并承担后果。**
+   这包括但不限于：是否开启局域网模式、是否开启异地通道（Cloudflare 隧道）、
+   是否把地址与令牌交给他人、是否把服务暴露到公网。
+4. 你需要自行确保使用行为**符合你所在国家/地区的法律法规**以及你所在网络环境的管理规定。
+   请勿将本工具用于未经授权的访问、控制他人设备或任何违法用途。
+5. 本项目的安全措施（令牌鉴权、限速、审计日志等）是**尽力而为**的加固，
+   不构成"绝对安全"的承诺，也不构成任何形式的安全担保。
+
+### 三、与 DeepSeek 等第三方的关系
+
+1. 本项目是**第三方独立工具**，由社区开发者维护，**与 DeepSeek（深度求索）官方没有任何隶属、
+   合作、赞助或背书关系**。
+2. 本项目**不包含也不分发** DeepSeek Harness 本体。你需要自行安装并遵守其许可协议；
+   本项目只是连接到你**本机已运行的** DSH 实例。
+3. "DeepSeek"、"DeepSeek Harness" 等名称与标识归其权利人所有，本项目仅作**指代性使用**
+   （说明它与哪个软件配合工作）。
+4. 本项目的应用图标源自项目使用者自行提供的图像素材。**若该素材涉及第三方商标或著作权，
+   由使用者自行取得授权**；若你对此有疑虑，请更换为你自己拥有权利的图标
+   （图标由 `phone/app-android/tools/make-icon.py` 生成，替换源图即可）。
+
+### 四、使用者的责任
+
+| 事项 | 要求 |
+|---|---|
+| 访问令牌 | 视同密码保管；**不要提交进任何仓库** |
+| 异地通道 | 仅在需要时开启（`--tunnel`）；不用时关闭，不要让桥接长期暴露在公网 |
+| 局域网模式 | 只在可信网络里开；公共 WiFi 下不要开 |
+| 配对码 | 用完即弃；怀疑泄露就重启桥接换新令牌（删掉 `pc/runtime/` 后重新配对） |
+| 日志 | `pc/logs/` 含访问审计与历史入口地址，对外发日志前先脱敏 |
+| 设备 | 不要 root/越狱后随意安装来源不明的构建；请从官方仓库获取 |
+| 依赖 | 定期更新依赖，关注安全公告 |
+
+### 五、已知的安全边界与取舍
+
+这些是**知情的设计取舍**，不是遗漏。详见 [SECURITY.md](SECURITY.md)：
+
+- 桥接在局域网/本机走 **HTTP 明文**（Android 无法按 IP 段放行明文，只能整体放开）；
+  异地通道走 HTTPS 隧道。**不要把局域网模式直接暴露到公网。**
+- 公开路由仅 `/health`、`/`、`/pair/claim`；`/pair.json` 与 `/pair` 只允许本机回环访问。
+- 配对码 8 位 × 32 字符表（约 1.1×10¹² 组合）+ 按来源 IP 限速。
+- 访问令牌为 192 位随机值，比较使用常量时间算法。
+
+### 六、报告安全问题
+
+发现漏洞请**不要**公开提交 issue，请通过仓库的 Security 页面或私下联系维护者，并在修复发布前保密。
+
+## 第三方组件与许可证
+
+全部第三方依赖均为**宽松许可证**（Apache-2.0 / MIT / ISC），**未使用任何 GPL / LGPL / AGPL / SSPL 等强制开源（copyleft）组件**，
+因此本项目可按 [LICENSE](LICENSE)（MIT）自由分发。仓库内**未包含**任何第三方二进制文件。
+
+| 端 | 组件 | 版本 | 许可证 |
+|---|---|---|---|
+| Android | AndroidX（core-ktx / appcompat / activity-ktx / webkit / constraintlayout / lifecycle-runtime-ktx） | 1.7–1.13 | Apache-2.0 |
+| Android | Kotlin 标准库 + kotlinx-coroutines-android | 2.0.21 / 1.8.1 | Apache-2.0 |
+| Android | com.journeyapps:zxing-android-embedded（含 com.google.zxing:core） | 4.3.0 | Apache-2.0 |
+| Node | qrcode 及其传递依赖 | ^1.5.4 | 22 × MIT + 7 × ISC |
+| 构建工具 | Android Gradle Plugin 8.7.3 / Gradle 8.10.2 / JDK 17 | — | Apache-2.0（仅构建期，不随产物分发） |
+
+可选外部程序（**不包含在本仓库内**，需自行获取）：cloudflared（Apache-2.0）、adb（Apache-2.0）、
+DSH 本体（归其权利人所有，本项目不分发）。
+
+**发布 APK / 绿色包时**（此时第三方库随包分发）需补做：随包附上各库的许可证文本与版权声明
+（Apache-2.0 还需保留其 `NOTICE`，改过源码要说明修改）；建议在应用内加「开源许可」页面或随包附 `licenses/` 目录。
+
+生成完整依赖清单：
+
+```bash
+# Android：完整依赖树
+cd phone/app-android && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+
+# Node：当前 lock 里全部包及其许可证
+node -e "const l=require('./pc/package-lock.json').packages;for(const[k,v]of Object.entries(l))if(k.startsWith('node_modules/'))console.log(k.replace('node_modules/',''),'|',v.license||'UNKNOWN')"
+```
 
 ---
 
@@ -572,6 +602,3 @@ Android 安全基线（调试开关/备份/混合内容/WebView 文件访问/启
 > 自己构建：`cd phone/app-android && ./gradlew assembleDebug`；
 > release 包的签名从**仓库外**的 `~/.gradle/gradle.properties` 读密钥，
 > 没有密钥时会产出未签名包，不会导致构建失败。
-
-<!-- wm:5df33da04b​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​ · PocketPilot 原创项目 · 见 WATERMARK.md -->
-

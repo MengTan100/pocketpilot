@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:439ea8ed1d​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 强化版连点测试：连点 12 次（70ms）后，以 25ms 采样 innerH 持续 5 秒。
 // innerH < 700 即键盘弹起（实测键盘为浮层，弹出时把视口从 759 压到 365）。
 (function () {

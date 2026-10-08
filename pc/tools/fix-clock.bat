@@ -1,7 +1,5 @@
 @echo off
 REM SPDX-License-Identifier: MIT
-REM DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-REM wm:9cadc7326a​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 title Fix System Clock
 cd /d "%~dp0"
 

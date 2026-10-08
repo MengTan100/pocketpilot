@@ -1,0 +1,42 @@
+# ============================================================================
+#  行尾统一 —— 防止再出现"整篇文件行尾 diff"
+# ============================================================================
+#  为什么需要这个文件：
+#    Windows 上的编辑器默认写 CRLF，而仓库里绝大多数文件是 LF。没有统一规则时，
+#    任何人在 Windows 上保存一次，都会把**整个文件**的每一行都变成 CRLF，
+#    于是 diff 里出现"全文改动"—— 真正的改动被淹没，代码评审和 git blame 全部失效，
+#    合并时还会产生大片无意义的冲突。
+#
+#  约定：
+#    · 仓库内一律按 LF 存储（跨平台一致，脚本在 Linux / macOS 上能直接跑）；
+#    · Windows 批处理是唯一例外：cmd.exe 读 CRLF 最稳，检出时转成 CRLF；
+#    · 二进制显式声明，避免被当成文本做行尾转换或三方合并而损坏文件。
+#
+#  改了规则后如果某个文件仍有全文 diff，说明索引里还是旧行尾：
+#      git add --renormalize <文件>
+# ============================================================================
+
+# 默认：由 Git 自动判定文本 / 二进制，并按下面的规则做换行转换
+* text=auto
+
+# 源码与文档：仓库与工作区都保持 LF
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.kt   text eol=lf
+*.kts  text eol=lf
+
+# Windows 批处理：检出为 CRLF（写 LF 会让 cmd.exe 解析异常，表现为双击闪退）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：不做行尾转换、不参与文本 diff
+# （*.jar 也已存在于仓库中：Gradle Wrapper 的 gradle-wrapper.jar —— 一旦被当文本处理就会损坏）
+*.png     binary
+*.jks     binary
+*.keystore binary
+*.apk     binary
+*.jar     binary

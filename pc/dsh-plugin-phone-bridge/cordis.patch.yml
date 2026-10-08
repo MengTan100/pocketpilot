@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: MIT
-# DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-# wm:f39380221e​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 # 手机端连接插件（组合包 patch 层）
 #
 # DSH 的加载顺序：bundle 的 patch 先应用，profile 自己的 cordis.patch.yml 随后，

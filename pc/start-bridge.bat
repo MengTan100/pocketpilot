@@ -1,7 +1,5 @@
 @echo off
 REM SPDX-License-Identifier: MIT
-REM DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-REM wm:65fb8b55fb​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 chcp 65001 >nul
 title DSH 手机桥接 - USB 模式
 cd /d "%~dp0"

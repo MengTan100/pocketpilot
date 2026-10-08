@@ -21,10 +21,8 @@ PocketPilot 把电脑的远程执行能力交给手机。这里只写**实际会
 - 别提交运行时状态：`pc/bridge.config.json`、`pc/runtime/`、`pc/logs/` 含明文令牌，已在 `.gitignore` 里。
 - 别把令牌写进日志或代码，也别把日志原样贴到 issue（里面有本机地址）。
 - 别把第三方安装包/可执行文件放进仓库（许可证问题，内容也无法审查）。
-- 自查：`node tools/security-check.mjs`。
+- 自查：推送到 GitHub 后 CI 会自动跑仓库卫生检查（`.github/workflows/build.yml` 的 `hygiene` job）；本地也可以跑 `python .github/hygiene.py`。
 
 ## 令牌泄露了怎么办
 
 删掉 `pc/bridge.config.json` → 重启桥接（生成新令牌）→ 手机重新配对。**先换凭据，再删文件** —— 只要可能被拿到过，它就已经失效了。
-
-<!-- wm:769e360128​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​ · DSH Phone Bridge 原创项目 · 见 WATERMARK.md -->

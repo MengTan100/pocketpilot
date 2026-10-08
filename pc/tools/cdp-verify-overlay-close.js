@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:17cb76ed91​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 验证"通用遮罩关闭"方案：不依赖固定坐标，
 // 而是从 listbox 向上找覆盖全屏的遮罩层，然后点它的非 listbox 区域。
 (function () {

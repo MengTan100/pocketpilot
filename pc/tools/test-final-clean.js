@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:5075ded128​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 完整验证：toggle 开合 + 发消息不受干扰。
 // 关键：点输入框打字时，innerH 应正常缩小（键盘正常起来），绝不被压。
 (function () {

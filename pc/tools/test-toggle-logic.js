@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:ef5f1a8e0a​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 逻辑验证：用 CDP 精确触发，验证 toggle 逻辑是否正确（不受 input tap 飘忽影响）。
 // 步骤：
 // 1. plusButton.click() 开面板（已验证有效）

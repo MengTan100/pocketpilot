@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:f267720107​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 点击 DSH 自己的侧栏折叠按钮（用 aria-label 精确匹配，避免点到消息卡片里的其它 toggle）
 (function () {
   var candidates = document.querySelectorAll('[class*="_toggle"]');

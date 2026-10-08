@@ -6,11 +6,5 @@
   "main": "bridge.js",
   "dependencies": {
     "qrcode": "^1.5.4"
-  },
-  "_watermark": {
-    "project": "dsh-phone-bridge",
-    "origin": "8ead0b1032",
-    "license": "MIT",
-    "notice": "见 WATERMARK.md"
   }
 }
