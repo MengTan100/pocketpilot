@@ -92,6 +92,23 @@
     <string name="err_no_channel">未找到电脑。请检查：1）电脑上已运行 start-bridge.bat；2）USB 数据线已连接，或两台设备在同一 Wi-Fi 下；3）或使用二维码配对。</string>
     <string name="err_handshake">握手失败，请重试或重新配对。</string>
 
+    <!-- 连接方式（三态）。连上后直接显示走的是哪条路，用户一眼能看出"现在靠什么连着" -->
+    <string name="link_mode_usb">USB</string>
+    <string name="link_mode_lan">局域网</string>
+    <string name="link_mode_remote">异地</string>
+    <!-- 状态详情：例如「局域网 · 已知局域网 · 40ms」 -->
+    <string name="status_link_detail">%1$s · %2$s · %3$dms</string>
+    <!--
+      全部候选都不可达时的可操作提示。
+      刻意不说"连接失败"——那对用户毫无帮助。最常见的原因是路由器换了 DHCP 租约，
+      手机里存的是旧局域网地址（实测事故：存 192.168.0.8，真实地址已是 192.168.0.4），
+      所以直接告诉用户"该怎么办"。
+    -->
+    <string name="err_addr_may_changed">电脑的局域网地址可能变了：请在电脑上重新打开配对二维码并重新扫码。</string>
+    <string name="err_all_unreachable">所有已知地址都连不上（已试 %1$d 个）。%2$s</string>
+    <!-- 换了主机就必须清掉旧令牌，绝不能把凭证发给不认识它的机器 -->
+    <string name="link_token_cleared">目标主机已改变，已清除旧令牌，正在重新配对…</string>
+
     <!-- 同步状态胶囊：只在"补同步中 / 刚重连 / 未同步"时短暂出现，正常时隐藏 -->
     <string name="sync_chip_desc">对话同步状态</string>
     <string name="sync_state_synced">已同步</string>

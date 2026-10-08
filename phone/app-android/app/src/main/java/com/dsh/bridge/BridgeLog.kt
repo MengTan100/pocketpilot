@@ -54,14 +54,18 @@ object BridgeLog {
 
     @Synchronized
     private fun append(level: String, message: String) {
-        val line = "${stamp.format(Date())} [$level] $message"
+        // 落盘/logcat 前统一打码：这是**唯一**的写日志出口，所以只要在这里做一次，
+        // 任何调用点都不可能把令牌漏进日志（包括以后新加的调用点）。
+        // 令牌等同电脑操作权限（见免责声明第 4 条），日志会被用户导出反馈，绝不能明文。
+        val safe = maskSecrets(message)
+        val line = "${stamp.format(Date())} [$level] $safe"
         Log.println(
             when (level) {
                 "ERROR" -> Log.ERROR
                 "WARN" -> Log.WARN
                 else -> Log.DEBUG
             },
-            TAG, message
+            TAG, safe
         )
         synchronized(recent) {
             recent.addLast(line)
@@ -73,6 +77,15 @@ object BridgeLog {
             // 写盘失败不能让主流程崩
         }
     }
+
+    /**
+     * 打码：令牌类参数只保留前 4 位，其余一律 ****。
+     *
+     * 实现放在 [SecretMask]（纯函数，不碰 Android 与文件系统），这样它能在电脑上
+     * 离线跑测试。理由很直接：打码写错 = 令牌明文进日志，属于**必须被验证**的代码，
+     * 不能只靠肉眼看一眼。
+     */
+    fun maskSecrets(message: String): String = SecretMask.mask(message)
 
     /** 最近日志快照（供界面展示或导出）。 */
     fun tail(count: Int = 60): List<String> = synchronized(recent) {
