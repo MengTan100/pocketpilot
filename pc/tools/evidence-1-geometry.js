@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:2a9dd1c0e8​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 证据 1：量出 CSS 像素 → 屏幕物理像素的换算关系，供 adb input tap 使用。
 (function () {
   var out = {};

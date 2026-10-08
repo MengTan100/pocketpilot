@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:c819a05ccc​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 返回底部关键元素的屏幕坐标（供 adb input tap 使用）。
 (function () {
   var DPR = window.devicePixelRatio, OFF_Y = 152;

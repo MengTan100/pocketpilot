@@ -33,11 +33,5 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2"
   },
-  "license": "MIT",
-  "_watermark": {
-    "project": "dsh-phone-bridge",
-    "origin": "8db5189c93",
-    "license": "MIT",
-    "notice": "见 WATERMARK.md"
-  }
+  "license": "MIT"
 }

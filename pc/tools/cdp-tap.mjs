@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:92731f32cd​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 /**
  * 用 CDP 派发**真实触摸**（Input.dispatchTouchEvent）——产生 isTrusted=true 的事件，
  * 走浏览器输入管线，和手指等价；但没有 adb shell 启动进程的几秒开销，时序可控。

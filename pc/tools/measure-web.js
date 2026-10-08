@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:b1eb5abbca​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 'use strict';
 /**
  * measure-web.js —— 量化 DSH Web 前端的加载成本，为延迟优化定位瓶颈。

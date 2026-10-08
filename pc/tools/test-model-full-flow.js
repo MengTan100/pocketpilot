@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:67034c73b6​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 复现完整流程：点模型选择器 → 点菜单里的「模型」→ 出现的列表里找搜索框。
 (function () {
   function findModelBtn() {

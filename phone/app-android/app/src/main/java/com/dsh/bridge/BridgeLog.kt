@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:9bcba3a12a​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 package com.dsh.bridge
 
 import android.content.Context
@@ -42,7 +40,7 @@ object BridgeLog {
             file.renameTo(prev)
         }
         logFile = file
-        // 出处指纹（水印第 4 层）：日志里带上项目标识，便于取证与溯源。见 WATERMARK.md。
+        // 出处指纹（水印第 4 层）：日志里带上项目标识，便于取证与溯源。见 README.md。
         info("=== App 启动 (${dayStamp.format(Date())}) === dsh-phone-bridge/DSPB2026")
     }
 

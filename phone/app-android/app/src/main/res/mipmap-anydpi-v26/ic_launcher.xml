@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   SPDX-License-Identifier: MIT
-  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-  wm:9f46a9a411​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 -->
 <!-- 自适应图标：前景用 DSH 官方图标（已按 66% 安全区缩放），背景取官方品牌底色 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">

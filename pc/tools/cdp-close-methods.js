@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:c1f02d7b18​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 逐种方式测试能否关闭「+」弹出的 listbox 面板。
 // 依次尝试：ESC → 点击面板外部 → 再次点击触发按钮。
 (function () {

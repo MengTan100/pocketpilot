@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   SPDX-License-Identifier: MIT
-  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-  wm:3c61b03a98​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 -->
 <!-- 状态圆点：不用 View + setBackgroundColor（那会画成方块），统一用这个可着色的圆 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"

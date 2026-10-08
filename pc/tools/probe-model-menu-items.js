@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:c3aaa38da9​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 打开模型菜单并 dump 其中所有可点项（含 aria-haspopup / role / 坐标），
 // 用来确定"哪一项通向带搜索框的模型列表"。
 (function () {

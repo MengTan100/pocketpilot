@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:926e9899b4​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 验证：面板开后，键盘是否被持续压制。
 // 步骤：1) .click() 开面板  2) 立即聚焦输入框（模拟 DSH 抢焦点）  3) 轮询 innerH 看键盘有没有顶起
 (function () {

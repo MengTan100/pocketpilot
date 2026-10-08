@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   SPDX-License-Identifier: MIT
-  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-  wm:3fa67e6212​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 -->
 <!-- 抽屉箭头的圆形底座：让"可点开合"这件事一眼可见 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"

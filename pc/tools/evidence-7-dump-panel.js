@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:bcc546f86f​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 证据 7：完整 dump 加号面板的结构与样式，判断"只剩一排指令"是内容缺失还是被 CSS 隐藏。
 (function () {
   var out = { innerH: window.innerHeight };

@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: MIT
+name: Bug 报告
+description: 报告一个可复现的问题（手机端 App / 电脑端桥接 / DSH 插件）
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！这个项目同时涉及**手机端 App**、**电脑端桥接**和 **DSH 插件**三部分，
+        环境信息不全时很难定位，请尽量填全。
+
+        > ⚠️ **粘贴日志前先去掉令牌与本机地址**：`bridgeToken`、`?k=<token>`、配对码、内网 IP、
+        > `C:\Users\<用户名>` 这类绝对路径。配对信息等同于你电脑的远程执行权限，请不要外发。
+  - type: dropdown
+    id: component
+    attributes:
+      label: 出问题的部分
+      options:
+        - 手机端 App（PocketPilot）
+        - 电脑端桥接（pc/bridge.js）
+        - DSH 插件（侧栏「手机连接」入口 / 配对二维码）
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: phone-model
+    attributes:
+      label: 手机型号
+      description: 厂商 + 型号，例如 Redmi Note 14 Pro、Pixel 8
+      placeholder: 厂商 + 型号
+    validations:
+      required: true
+  - type: input
+    id: android-version
+    attributes:
+      label: Android 版本
+      description: 设置 → 关于手机 → Android 版本（本项目最低支持 Android 8.0）
+      placeholder: 例如 Android 14
+    validations:
+      required: true
+  - type: input
+    id: pc-env
+    attributes:
+      label: 电脑环境
+      description: 操作系统与 Node.js 版本（`node -v`）
+      placeholder: 例如 Windows 11 23H2 / Node v24.12.0
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式
+      description: 局域网走明文 HTTP（仅限可信网络）；隧道走 HTTPS
+      options:
+        - 局域网（明文 HTTP）
+        - 隧道（HTTPS）
+        - 两种都试过，都有问题
+        - 还没连上（配对阶段就失败）
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: 版本号
+      description: App 版本（应用内可见）与插件版本（`package.json` 里的 version）；不填请写「不清楚」
+      placeholder: 例如 App 0.4.0 / 插件 0.4.0
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 一步一步写清怎么触发的（从"打开 App / 启动桥接"开始），能稳定复现最好
+      placeholder: |
+        1. 电脑上双击 pc\start-bridge.bat
+        2. 手机打开 PocketPilot，扫描电脑上的配对二维码
+        3. 打开某个会话，点右上角刷新
+        4. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的结果
+      placeholder: 我以为会……
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际的结果
+      description: 有报错原文、白屏、卡住不返回等，请照实录下来
+      placeholder: 实际却是……
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志与截图
+      description: |
+        电脑端日志在 `pc\logs\`（桥接启动时也会打印）；手机端日志可用 logcat 抓（`adb logcat`）。
+        **粘贴前请把令牌与本机地址替换成占位符**，例如 `bridgeToken=<已打码>`、`192.168.1.100`。
+      render: shell
+      placeholder: 粘贴脱敏后的日志
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已去掉日志里的令牌、配对码、内网 IP 与本机绝对路径
+          required: true
+        - label: 我已搜索过现有 issue，确认不是重复报告
+          required: true
+        - label: 我用的是正式发布包或自己从 `main` 构建的版本（不是来源不明的 APK）
+          required: false

@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:0f500eefe1​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 'use strict';
 /**
  * bridge.js —— PocketPilot 守护进程（PC 端）
  *
  * 架构定位：
- *   手机 (Operit AI / 任意浏览器)
+ *   手机 (PocketPilot App / 任意浏览器)
  *        │  ① USB: adb reverse tcp:3080 / tcp:3081  →  PC 回环
  *        │  ② 局域网: Bridge 绑 0.0.0.0 + 强随机 token
  *        ▼
@@ -51,7 +49,7 @@ const BRIDGE_VERSION = '1.0.0';
 /**
  * 项目出处指纹（水印第 4 层：运行时/构建指纹）。
  * 出现在：启动日志、状态页 HTML 注释、runtime/bridge-runtime.json。
- * 作用：一份被拷走/改名分发的桥接，仍能据此确认出处。见 WATERMARK.md。
+ * 作用：一份被拷走/改名分发的桥接，仍能据此确认出处。见 README.md。
  */
 const ORIGIN_MARK = 'dsh-phone-bridge/DSPB2026';
 const ROOT = __dirname;
@@ -367,7 +365,7 @@ async function syncTunnel(config) {
   return tunnel;
 }
 
-/** USB 模式下把握手信息推到手机共享目录（可选，便于 ToolPkg 免网络读取）。 */
+/** USB 模式下把握手信息写到手机共享目录（可选，供 App 直接读取，不必走网络）。 */
 async function pushHandshakeToDevice(config, payload) {
   if (!config.pushHandshakeToDevice || !tunnel.deviceSerial) return;
   const local = path.join(RUNTIME_DIR, 'handshake.json');
@@ -656,7 +654,7 @@ function bridgeRuntime() {
   return {
     service: 'dsh-phone-bridge',
     version: BRIDGE_VERSION,
-    // 出处指纹：运维/取证时据此确认这份 runtime 状态来自原始项目（见 WATERMARK.md）
+    // 出处指纹：运维/取证时据此确认这份 runtime 状态来自原始项目（见 README.md）
     origin: ORIGIN_MARK,
     generatedAt: new Date().toISOString(),
     mode: config.mode,
@@ -984,7 +982,7 @@ async function load(){
     '<div class="card"><h2>任务</h2>'+rows(s.tasks||{})+'</div>';
 }
 load(); setInterval(load, 3000);
-</script><!-- ${ORIGIN_MARK} · MIT · 见 WATERMARK.md --></body></html>`;
+</script><!-- ${ORIGIN_MARK} · MIT · 见 README.md --></body></html>`;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);

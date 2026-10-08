@@ -1,6 +1,4 @@
 # SPDX-License-Identifier: MIT
-# DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-# wm:ace429c7ab​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 # setup-remote-access.ps1
 # 跨网络（手机在别的 WiFi / 4G，PC 在家里）访问准备：检测穿透通道、给出可选方案、自动登记地址。
 #

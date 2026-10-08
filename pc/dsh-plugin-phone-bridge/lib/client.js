@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:f20f647181​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 /**
  * 前端 bundle：把「手机连接」入口放到**侧栏底部、紧挨设置齿轮**的位置，
  * 点击后**居中弹出**配对二维码；设置面板里的区段作为二级入口保留。
@@ -503,7 +501,7 @@ window.__ModuleLoader__.load({
 			}
 		}
 
-		// 出处指纹（水印第 4 层）：模块被整体拷走改名后，仍能据此确认来自本项目。见 WATERMARK.md。
+		// 出处指纹（水印第 4 层）：模块被整体拷走改名后，仍能据此确认来自本项目。见 README.md。
 		exports.__origin = 'dsh-phone-bridge/DSPB2026';
 
 		exports.apply = apply;

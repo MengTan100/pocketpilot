@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:7c38cce6ce​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 连点验证：连续快速点「+」8 次（间隔 120ms），全程 30ms 采样 innerH。
 // 判据：innerH 始终 759 → 键盘一次都没露出（连点也不弹）。
 (function () {

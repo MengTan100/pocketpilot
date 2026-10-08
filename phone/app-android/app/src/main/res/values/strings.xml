@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   SPDX-License-Identifier: MIT
-  DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-  wm:3d7959fe61​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 -->
 <!--
   默认语言 = 英文（Android 惯例：values/ 为兜底语言）。
@@ -122,7 +120,7 @@
     <!--
       构建指纹（水印第 4 层）：不显示在任何界面上，但会编进 APK 的资源表。
       作用：若有人打包分发衍生版本，可用 aapt2 dump resources 或直接搜字符串确认出处。
-      详见 WATERMARK.md；改这里要同步改 tools/watermark-lib.mjs 的 PROJECT_ID / PAYLOAD_TEXT。
+      详见 README.md；改这里要同步改 tools/watermark-lib.mjs 的 PROJECT_ID / PAYLOAD_TEXT。
     -->
-    <string name="project_origin_marker" translatable="false">dsh-phone-bridge/DSPB2026 · MIT · 见 WATERMARK.md</string>
+    <string name="project_origin_marker" translatable="false">dsh-phone-bridge/DSPB2026 · MIT · 见 README.md</string>
 </resources>

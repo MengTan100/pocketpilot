@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:ed57b8f116​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 证据：列出页面上所有 button[aria-label]，逐个检查我的判断逻辑会不会误命中。
 (function () {
   var all = document.querySelectorAll('button[aria-label]');

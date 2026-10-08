@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:b656f80136​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 完整验证：第一次点不闪、第二次点收面板不弹键盘、面板关后打字正常。
 // 用 CDP 精确事件触发，监测 innerH 时序（键盘顶起则 innerH 缩小）。
 (function () {

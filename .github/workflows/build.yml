@@ -1,0 +1,78 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 只读权限即可：CI 不推送、不写仓库
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Gradle（官方缓存 + wrapper 校验）
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 用仓库内的 wrapper 构建 release APK
+        run: ./gradlew -p phone/app-android assembleRelease --console=plain --stacktrace
+
+      - name: 断言产物不含 application-debuggable 并打印 sha256
+        run: |
+          set -euo pipefail
+          # 注意：debug 变体默认就带 application-debuggable，所以断言对象必须是 release 产物；
+          # release 没有签名密钥时产出的是 app-release-unsigned.apk（构建照样成功）。
+          APK="$(find phone/app-android/app/build/outputs/apk/release -name '*.apk' | sort | tail -n 1)"
+          if [ -z "$APK" ]; then
+            echo "::error::没有找到构建产物 APK"
+            exit 1
+          fi
+          echo "APK: $APK"
+
+          echo "--- sha256 ---"
+          sha256sum "$APK"
+
+          AAPT2="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name aapt2 -type f | sort -V | tail -n 1)"
+          if [ -z "$AAPT2" ]; then
+            echo "::error::在 build-tools 里找不到 aapt2"
+            exit 1
+          fi
+          echo "aapt2: $AAPT2"
+          "$AAPT2" dump badging "$APK" > badging.txt
+          if grep -q "application-debuggable" badging.txt; then
+            echo "::error::release 构建里出现了 application-debuggable（不应存在）"
+            exit 1
+          fi
+          echo "OK：release 产物不含 application-debuggable"
+
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 检查器自测（正反用例）
+        run: python .github/hygiene.py --selftest
+
+      - name: 仓库卫生检查（禁入仓二进制 + 明显密钥形态）
+        run: python .github/hygiene.py

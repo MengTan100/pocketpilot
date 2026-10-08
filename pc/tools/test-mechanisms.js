@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT
-// DSH Phone Bridge 原创项目 · 版权与出处见 WATERMARK.md
-// wm:760dbee0fc​‌​​​‌​​​‌​‌​​‌‌​‌​‌​​​​​‌​​​​‌​​​‌‌​​‌​​​‌‌​​​​​​‌‌​​‌​​​‌‌​‌‌​
 // 机制预测试：在写任何代码前，先用 CDP 把"开/关"两个机制验证清楚。
 // 1) plusButton.click() 能否打开面板？（React onClick 是否响应合成 click）
 // 2) 面板打开后，在 document.body 上派发 pointerdown+mousedown 能否关闭？
