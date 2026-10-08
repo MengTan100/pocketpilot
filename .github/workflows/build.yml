@@ -29,9 +29,9 @@ jobs:
 
       - name: 用仓库内的 wrapper 构建 release APK
         run: |
-      cd phone/app-android
-      chmod +x gradlew   # API 推送的树可能丢失可执行位，显式补上（本地 git 推送则天然保留）
-      ./gradlew assembleRelease --console=plain --stacktrace
+          cd phone/app-android
+          chmod +x gradlew   # API 推送的树可能丢失可执行位，显式补上（本地 git 推送则天然保留）
+          ./gradlew assembleRelease --console=plain --stacktrace
 
       - name: 断言产物不含 application-debuggable 并打印 sha256
         run: |
