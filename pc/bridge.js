@@ -62,6 +62,10 @@ try {
 }
 
 const BRIDGE_VERSION = '1.0.0';
+
+/** 发布仓库与插件包名：配对页上的下载链接用，改版本时只改这两处。 */
+const RELEASE_REPO = 'https://github.com/MengTan100/pocketpilot';
+const PLUGIN_ZIP_NAME = 'dsh-plugin-phone-bridge-0.5.0.zip';
 /**
  * 项目出处指纹（水印第 4 层：运行时/构建指纹）。
  * 出现在：启动日志、状态页 HTML 注释、runtime/bridge-runtime.json。
@@ -1178,6 +1182,45 @@ function isLoopbackRequest(req) {
   return ip === '127.0.0.1' || ip === '::1';
 }
 
+/**
+ * 本机是否带着可直发的手机安装包。
+ *
+ * 查找顺序（先插件包内嵌，再缓存目录）：
+ *   1) pc/dsh-plugin-phone-bridge/PocketPilot.apk ← 发布用的插件 zip 里就带着这一份
+ *   2) ~/.dsh/phone-bridge-cache/PocketPilot.apk  ← 手动放的缓存位置
+ * 两份都没有就返回空串，调用方回落到发布页链接。
+ */
+function findLocalApk() {
+  const candidates = [
+    path.join(__dirname, 'dsh-plugin-phone-bridge', 'PocketPilot.apk'),
+    path.join(config.dshHome, 'phone-bridge-cache', 'PocketPilot.apk'),
+  ];
+  for (const file of candidates) {
+    try {
+      const st = fs.statSync(file);
+      if (st.isFile() && st.size > 0) return file;
+    } catch { /* 试下一个 */ }
+  }
+  return '';
+}
+
+/**
+ * 给手机用的下载地址：优先局域网 IP（手机在同一 Wi-Fi 时可直接打开），
+ * 没有网卡地址时退回回环（USB + adb reverse 场景）。
+ */
+function apkDownloadUrl() {
+  const hasLocal = Boolean(findLocalApk());
+  if (!hasLocal) return `${RELEASE_REPO}/releases/latest/download/PocketPilot.apk`;
+  const lan = config.lanAddresses && config.lanAddresses.length > 0 ? config.lanAddresses[0].address : '';
+  const host = lan || '127.0.0.1';
+  return `http://${host}:${config.bridgePort}/apk`;
+}
+
+/** 电脑端插件包：走发布页（体积小，且用户下载的就是与当前版本一致的包）。 */
+function pluginDownloadUrl() {
+  return `${RELEASE_REPO}/releases/latest/download/${PLUGIN_ZIP_NAME}`;
+}
+
 function isExternalRequest(req) {
   const host = String(req.headers.host || '').toLowerCase();
   if (/trycloudflare\.com|\.cfargotunnel\.com/.test(host)) return true;
@@ -1348,6 +1391,19 @@ function renderPairPage(qrDataUrl, info, embed = false) {
  .card.remote.stable{border-color:#1f7a4d}
  .card.remote.temporary{border-color:#7a5c1f}
 
+ /* ---- 下载区：App 与插件是配套的两件，放在同一张卡片里 ---- */
+ .card.downloads{width:min(92vw,560px);gap:10px}
+ .dlrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+ .dlbtn{display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:9px;
+        font-size:14px;font-weight:600;text-decoration:none;background:#2563eb;color:#fff;
+        border:1px solid transparent}
+ .dlbtn:hover{text-decoration:none;filter:brightness(1.08)}
+ .dlbtn.ghost{background:rgba(255,255,255,.08);color:#e8eaf0;border-color:rgba(255,255,255,.28)}
+ .copybtn{background:transparent;color:#9fb3d1;border:1px solid #2b3446;border-radius:8px;
+          padding:7px 11px;font-size:12.5px;cursor:pointer}
+ .copybtn:active{background:#1b2230}
+ .dlnote{color:#6f7789;font-size:11.5px;line-height:1.6;max-width:520px}
+
  /* ---- 嵌入模式：只缩小尺寸，不减内容 ---- */
  body.embed{padding:12px 10px;gap:9px}
  body.embed h1{font-size:17px}
@@ -1375,9 +1431,44 @@ function renderPairPage(qrDataUrl, info, embed = false) {
 </div>
 <div class="sub">配对地址 <code>${info.target}</code></div>
 ${info.remoteHtml}
+<div class="card downloads">
+  <div class="sub">App 与电脑端插件是配套的两件，缺一不可</div>
+  <div class="dlrow">
+    <a class="dlbtn" href="${info.apkHref}">⬇ 手机 App（APK）</a>
+    <button class="copybtn" type="button" data-copy="${info.apkHref}">复制链接</button>
+  </div>
+  <div class="dlrow">
+    <a class="dlbtn ghost" href="${info.pluginHref}">⬇ 电脑端插件（ZIP）</a>
+    <button class="copybtn" type="button" data-copy="${info.pluginHref}">复制链接</button>
+  </div>
+  <div class="dlnote">${info.apkNote}</div>
+</div>
 <div class="tip">二维码与配对码等同本机操作权限，请勿外发。<br>
 App 里也可点「直接连接」——插着数据线或用同一 WiFi 时会自动发现；<br>
 异地时会自动切换到上面的公网地址。</div>
+<script>
+(function(){
+  // 复制按钮：navigator.clipboard 只在安全上下文可用（127.0.0.1 算安全，局域网 IP 不算），
+  // 所以备一条 textarea + execCommand 的旧通道。
+  document.querySelectorAll('.copybtn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var text = btn.getAttribute('data-copy') || '';
+      function done(){ var t = btn.textContent; btn.textContent = '已复制'; setTimeout(function(){ btn.textContent = t; }, 1200); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else { fallback(); }
+      function fallback(){
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); document.body.removeChild(ta); done();
+        } catch (e) { window.prompt('手动复制下面的链接：', text); }
+      }
+    });
+  });
+})();
+</script>
 ${embed ? `<script>
 (function(){
   // 把"刚好放得下"的高度告诉父窗口。父窗口会校验 origin 只认本机桥接。
@@ -1495,6 +1586,34 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/dsh' || url.pathname.startsWith('/dsh/')) {
       if (!authorizeDshAccess(req, url, res)) return;
       proxy.handleRequest(req, res);
+      return;
+    }
+
+    // —— 手机 App 安装包：由本机直接提供（插件包内已附带 / 也可放缓存目录）——
+    //    为什么由桥接发而不是给 GitHub 链接：国内直连 GitHub 常被墙/限速，
+    //    而手机此时就在同一 Wi-Fi（或 USB）里，从电脑下载是最快也最稳的路。
+    if (route === '/apk' && req.method === 'GET') {
+      const file = findLocalApk();
+      if (!file) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+        res.end('本机没有内置 APK：请用发布页下载，或把 PocketPilot.apk 放到\n' +
+          '  pc/dsh-plugin-phone-bridge/PocketPilot.apk 或 ~/.dsh/phone-bridge-cache/PocketPilot.apk\n');
+        return;
+      }
+      let stat;
+      try { stat = fs.statSync(file); } catch { stat = null; }
+      if (!stat || !stat.size) {
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        res.end('APK 读取失败\n');
+        return;
+      }
+      res.writeHead(200, {
+        'content-type': 'application/vnd.android.package-archive',
+        'content-length': stat.size,
+        'content-disposition': 'attachment; filename="PocketPilot.apk"',
+        'cache-control': 'no-store',
+      });
+      fs.createReadStream(file).pipe(res);
       return;
     }
 
@@ -1827,6 +1946,13 @@ const server = http.createServer(async (req, res) => {
           desktopAlive: desktop.alive,
           target,
           pairCode: PAIR_CODE,
+          // 下载区：APK 优先由本机直发（同一 Wi-Fi 下最快，也绕开国内访问 GitHub 的问题），
+          // 本机没有内置包时回落到发布页链接。
+          apkHref: apkDownloadUrl(),
+          pluginHref: pluginDownloadUrl(),
+          apkNote: findLocalApk()
+            ? 'APK 由本机直接提供（同一 Wi-Fi 下最快）；插件包 zip 内也带着同一份 APK。'
+            : '本机没有内置 APK，链接指向发布页；国内打不开时可用发布页里的加速镜像。',
           // 异地通道：让用户直观看到"人在外面也能连"，以及"这个地址稳不稳"
           tunnelState: tunnelStatus.state,
           tunnelUrl: tunnelStatus.publicUrl || '',
