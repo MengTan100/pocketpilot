@@ -219,7 +219,9 @@ window.__ModuleLoader__.load({
 			background: "#0b0d12",
 			border: "1px solid #232a36",
 			borderRadius: 14,
-			overflow: "hidden",
+			// ⚠️ 曾经是 overflow:hidden：DSH 弹窗比内容矮时，iframe 底部（含二维码）被直接裁掉，
+			// 用户看到"二维码显示不全、扫不出来"。改成 auto —— 放不下就滚动，绝不切内容。
+			overflow: "auto",
 			boxShadow: "0 24px 64px rgba(0,0,0,0.55)",
 		};
 		const HEADER = {

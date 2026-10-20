@@ -1,8 +1,8 @@
 {
     "notesUrl":  "https://github.com/MengTan100/pocketpilot/releases/latest",
-    "version":  "0.5.1",
+    "version":  "0.5.2",
     "pluginUrl":  "https://github.com/MengTan100/pocketpilot/releases/latest/download/dsh-plugin-phone-bridge.zip",
     "releasedAt":  "2026-10-20",
-    "bundleUrl":  "https://github.com/MengTan100/pocketpilot/releases/latest/download/PocketPilot-v0.5.1-bundle.zip",
+    "bundleUrl":  "https://github.com/MengTan100/pocketpilot/releases/latest/download/PocketPilot-v0.5.2-bundle.zip",
     "apkUrl":  "https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk"
 }

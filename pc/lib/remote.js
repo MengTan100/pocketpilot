@@ -694,7 +694,10 @@ function createCloudflaredProvider(options = {}) {
           lastError: null,
         };
       }
-      const st = tunnel.status();
+      // status() 在"守护进程刚退出/记录被删"的瞬间会返回 null。
+      // 以前这里直接读 st.publicUrl，于是 5 秒一次的看门狗每轮都抛
+      // "Cannot read properties of null (reading 'publicUrl')"，把真正的隧道故障淹在噪声里。
+      const st = tunnel.status() || { state: 'unknown', publicUrl: '', lastError: null, uptimeSeconds: 0 };
       const note = st.publicUrl
         ? (st.uptimeSeconds > 0
           ? `临时隧道地址（重启不变，当前已运行 ${humanUptime(st.uptimeSeconds * 1000, 0)}）：${st.publicUrl}`
@@ -738,7 +741,7 @@ function createCloudflaredProvider(options = {}) {
     },
     publicBases() {
       if (!tunnel) return [];
-      const st = tunnel.status();
+      const st = tunnel.status() || {};
       return st.publicUrl ? [st.publicUrl] : [];
     },
   };

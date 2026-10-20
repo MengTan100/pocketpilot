@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-phone-bridge",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "PocketPilot 的 DSH 插件：在侧栏底部加入「手机连接 / Phone link」入口，弹出配对二维码；界面文字跟随系统语言。装到电脑端 DSH，与手机 App 配套使用。",
   "type": "module",
   "main": "pc/dsh-plugin-phone-bridge/lib/index.js",

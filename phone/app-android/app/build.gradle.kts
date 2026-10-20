@@ -12,8 +12,8 @@ android {
         applicationId = "com.dsh.bridge"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 7
+        versionName = "0.5.2"
     }
 
     /**
@@ -57,6 +57,12 @@ android {
             // 刻意不加 applicationIdSuffix：
             // MIUI 桌面按包名缓存图标，包名一变图标才会刷新；
             // 之前带 .debug 后缀，导致"换了图标却仍显示旧的"反复出现。
+            //
+            // **debug 也用 release 签名**（有密钥时）：否则手机上装的是 debug 签名
+            // （CN=Android Debug），而发布包是 CN=PocketPilot —— 两者签名不同，
+            // 发布包无法覆盖安装，用户查签名也会发现"对不上"。
+            // 注意这只统一签名，debug 仍保留 debuggable 与 WebView 远程调试能力。
+            if (signingReady) signingConfig = signingConfigs.getByName("release")
         }
     }
 

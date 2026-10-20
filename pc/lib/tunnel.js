@@ -414,6 +414,15 @@ function createPersistentTunnel(options = {}) {
       return { ok: false, coolingDown: true, retryInMs: retryAt - now() };
     }
     const rec = record();
+      // ⚠️ 必须**先**判空：record() 在记录文件刚被删/尚未建立时返回 null，
+      // 而下面第一句就读 rec.publicUrl —— 以前这里每轮抛
+      // "Cannot read properties of null (reading 'publicUrl')"，看门狗等于没在跑。
+      if (!rec) {
+        retryAt = now() + retryDelayMs;
+        retryDelayMs = Math.min(RETRY_MAX_MS, retryDelayMs * 2);
+        log('看门狗：没有隧道记录，重新建立');
+        return start();
+      }
       // ⚠️ 关键：记录里"有 pid 但还没有地址"= 隧道**正在建立**，必须等它，绝不能重建。
       // 踩过的坑：此前这一状态被判成"记录不完整 → 重建"，而新隧道要几秒才拿到地址，
       // 于是每 5 秒重建一次 —— cloudflared 越堆越多、地址永远对不上，

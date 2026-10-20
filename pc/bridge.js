@@ -1357,15 +1357,22 @@ function renderPairPage(qrDataUrl, info, embed = false) {
 <style>
  *{box-sizing:border-box}
  html,body{height:100%}
- /* 整体居中：内容无论多少都落在可视区正中，嵌在设置面板的 iframe 里同样成立 */
+ /* 整体居中：内容无论多少都落在可视区正中，嵌在设置面板的 iframe 里同样成立。
+    但**必须用 safe center**：父窗口（DSH 弹窗）把 iframe 压矮时，普通 center 会让
+    内容从上下两端同时溢出并被裁掉 —— 二维码只露出中间一条，扫不出来。
+    safe center 在放不下时退回 flex-start，配合 overflow:auto 变成"可滚动"而不是"被切掉"。 */
  body{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;
-      min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      min-height:100%;display:flex;flex-direction:column;align-items:center;
+      justify-content:safe center;
+      overflow-y:auto;overscroll-behavior:contain;
       background:#0b0d12;color:#e8eaf0;padding:20px 16px;gap:14px;text-align:center}
  h1{font-size:22px;margin:0;font-weight:600}
  .sub{color:#8b93a7;font-size:14px;line-height:1.6;max-width:520px}
  .card{background:#151922;border:1px solid #232a36;border-radius:16px;padding:18px;
        display:flex;flex-direction:column;align-items:center;gap:12px}
- img.qr{width:min(62vw,340px);height:auto;background:#fff;border-radius:12px;padding:12px;display:block}
+ /* 二维码：白底 + 静区；pixelated 让整数缩放不糊，比默认双线性更利于识别 */
+ img.qr{width:min(62vw,340px);height:auto;background:#fff;border-radius:12px;padding:12px;display:block;
+        image-rendering:pixelated;image-rendering:crisp-edges}
  .meta{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;font-size:14px;color:#a9b1c3}
  .meta b{color:#e8eaf0}
  .ok{color:#4ade80}.warn2{color:#fbbf24;font-size:13px}
@@ -1396,6 +1403,13 @@ function renderPairPage(qrDataUrl, info, embed = false) {
  .dlnote{color:#6f7789;font-size:11.5px;line-height:1.6;max-width:520px}
  .verrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;
          color:#8b93a7;font-size:12.5px}
+ /* 嵌入模式：可选内容折叠，保证二维码与配对码在弹窗里完整可见 */
+ .moreBox{width:min(92vw,560px);text-align:left}
+ .moreBox>summary{cursor:pointer;color:#9fb3d1;font-size:12.5px;padding:8px 10px;border:1px solid #2b3446;
+                   border-radius:9px;background:rgba(255,255,255,.04);list-style:none;text-align:center}
+ .moreBox>summary::-webkit-details-marker{display:none}
+ .moreBox[open]{display:flex;flex-direction:column;gap:10px;align-items:center}
+ .moreBox[open]>summary{margin-bottom:2px}
 
  /* ---- 嵌入模式：只缩小尺寸，不减内容 ---- */
  body.embed{padding:12px 10px;gap:9px}
@@ -1403,7 +1417,7 @@ function renderPairPage(qrDataUrl, info, embed = false) {
  body.embed .sub{font-size:12.5px;line-height:1.5}
  body.embed .card{padding:11px;gap:9px;border-radius:12px}
  body.embed .card.remote{width:100%}
- body.embed img.qr{width:min(48vw,215px);padding:8px;border-radius:10px}
+ body.embed img.qr{width:min(56vw,240px);padding:8px;border-radius:10px}
  body.embed .meta{font-size:12.5px;gap:14px}
  body.embed .codeval{font-size:23px;letter-spacing:4px;padding:7px 14px}
  body.embed .tip{font-size:11px;line-height:1.55}
@@ -1423,6 +1437,7 @@ function renderPairPage(qrDataUrl, info, embed = false) {
   <div class="codeval">${info.pairCode || '--------'}</div>
 </div>
 <div class="sub">配对地址 <code>${info.target}</code></div>
+${embed ? `<details class="moreBox"><summary>更多：异地通道 / 下载 / 版本</summary>` : ''}
 ${info.remoteHtml}
 <div class="card downloads">
   <div class="sub">App 与电脑端插件是配套的两件，缺一不可</div>
@@ -1440,6 +1455,7 @@ ${info.remoteHtml}
   <span>插件 v${info.version}${info.updateNote}</span>
   ${info.updateActions}
 </div>
+${embed ? `</details>` : ''}
 <div class="tip">二维码与配对码等同本机操作权限，请勿外发。<br>
 App 里也可点「直接连接」——插着数据线或用同一 WiFi 时会自动发现；<br>
 异地时会自动切换到上面的公网地址。</div>
