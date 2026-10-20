@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 完整验证：toggle 开合 + 发消息不受干扰。
 // 关键：点输入框打字时，innerH 应正常缩小（键盘正常起来），绝不被压。
 (function () {

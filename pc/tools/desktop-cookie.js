@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * desktop-cookie.js —— 为 DSH **桌面端实例**（默认 127.0.0.1:19387）自签一个合法的

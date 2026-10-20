@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证「收起时把 56px 图标条也藏掉」的效果。
 //
 // 依据（来自上一步的实测证据）：

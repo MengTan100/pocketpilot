@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 逻辑验证：用 CDP 精确触发，验证 toggle 逻辑是否正确（不受 input tap 飘忽影响）。
 // 步骤：
 // 1. plusButton.click() 开面板（已验证有效）

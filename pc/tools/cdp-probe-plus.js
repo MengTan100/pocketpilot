@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 点开「+」，把它面板里的每一项都列出来（文案 + 标签 + 是否 file input），
 // 用来判断"上传文件"到底走的是哪条路径，而不是靠猜。
 (function () {

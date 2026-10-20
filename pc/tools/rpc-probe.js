@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * rpc-probe.js —— 独立诊断脚本：对指定 DSH Web 实例跑一次完整会话往返，

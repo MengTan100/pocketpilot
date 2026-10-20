@@ -1,5 +1,5 @@
 @echo off
-REM SPDX-License-Identifier: MIT
+REM SPDX-License-Identifier: Apache-2.0
 title Fix System Clock
 cd /d "%~dp0"
 

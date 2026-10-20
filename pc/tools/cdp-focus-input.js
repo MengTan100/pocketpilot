@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 聚焦 DSH 的输入框（模拟用户点进去），并回报输入框与视口的位置关系，
 // 用来判断软键盘弹起后输入区是否会被遮住。
 (function () {

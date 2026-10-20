@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-watch-toggle.mjs —— 高频采样 + 真实点按，抓"点一次不开、点两次闪一下又关"。
  *

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * dsh-proxy.js —— 把只监听回环的 DSH 实例反向代理给手机（含 WebSocket）。

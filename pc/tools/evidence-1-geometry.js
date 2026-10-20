@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据 1：量出 CSS 像素 → 屏幕物理像素的换算关系，供 adb input tap 使用。
 (function () {
   var out = {};

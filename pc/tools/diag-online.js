@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 诊断：DSH 的恢复机制是否会因为"浏览器以为离线"而永久暂停。
 (function () {
   var out = {};

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 诊断手机端侧栏的完整结构，找出"工作区 / 会话列表"藏在哪。
 (function () {
   var out = {};

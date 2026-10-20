@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * 抓取页面控制台错误：连接 CDP，开启 Runtime/Log 域，重载页面，
  * 收集期间的 console 错误与未捕获异常。

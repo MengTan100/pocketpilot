@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 定位 DSH 底部那条"轮次 / token / 百分比"状态栏，读出它的结构与尺寸，
 // 以便判断能不能收窄居中（用户反馈它横铺满屏、不好退出）。
 (function () {

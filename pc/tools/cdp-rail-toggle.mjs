@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-rail-toggle.mjs —— 复现「点侧栏开关没反应 / 只闪一下」。
  *

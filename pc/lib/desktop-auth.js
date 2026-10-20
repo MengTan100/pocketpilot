@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * desktop-auth.js —— 为 DSH 桌面端实例自签浏览器会话 Cookie。

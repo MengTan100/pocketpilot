@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 定位底部状态栏（"轮 N 步" / "缓存命中" / "tok" / 百分比）的可点击目标，
 // 为后续"在它展开的页面里加关闭入口"做准备。
 (function () {

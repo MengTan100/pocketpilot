@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 极速连点：12 次 × 60ms，结束立即返回（不等待），方便 PC 端立刻采样键盘状态。
 (function () {
   function findPlus() {

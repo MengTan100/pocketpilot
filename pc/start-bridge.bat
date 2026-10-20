@@ -1,5 +1,5 @@
 @echo off
-REM SPDX-License-Identifier: MIT
+REM SPDX-License-Identifier: Apache-2.0
 chcp 65001 >nul
 title DSH 手机桥接 - USB 模式
 cd /d "%~dp0"

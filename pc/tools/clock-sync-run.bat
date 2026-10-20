@@ -1,5 +1,5 @@
 @echo off
-REM SPDX-License-Identifier: MIT
+REM SPDX-License-Identifier: Apache-2.0
 setlocal
 set LOG=%~dp0clock-fix.log
 

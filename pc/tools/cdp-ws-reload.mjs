@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * 定论工具：先开 Network 域，再重载页面让 WebSocket 重新建立，然后抓帧。
  *

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证：打开模型列表时键盘不弹。并输出搜索框的屏幕坐标（供真实点击下一步用）。
 (function () {
   function findModelBtn() {

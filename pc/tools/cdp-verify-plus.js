@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证「+」按钮在**不受任何注入干预**时的原生开合行为。
 // 判据用它自己的 aria-expanded，以及页面里 role=listbox 的数量。
 (function () {

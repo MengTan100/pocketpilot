@@ -152,7 +152,7 @@ curl http://127.0.0.1:3080/health        # 应返回 { ok: true, mode, dshRunnin
 | JS（桥接 / 插件） | ESM（`"type": "module"` 或 `.mjs`）；2 空格缩进；内置模块统一 `node:` 前缀 |
 | 插件界面文案 | `lib/client.js` 里的 `zh` / `en` 字典**必须同时给两套**，界面语言跟随系统（DSH locale 优先，`navigator.language` 兜底） |
 | Windows 批处理 | `.bat` 一律**纯 ASCII**：cmd.exe 按当前代码页读文件，UTF-8 中文会乱码成语法错误、双击闪退 |
-| 文件头 | 保留各语言的 `SPDX-License-Identifier: MIT` 与版权声明行 |
+| 文件头 | 保留各语言的 `SPDX-License-Identifier: Apache-2.0` 与版权声明行 |
 | 本地路径 | 示例一律用占位符（`<PC的局域网IP>`、`192.168.1.100`、`~/`），**不要**写自己的真实路径 |
 
 ---
@@ -218,6 +218,6 @@ node --check pc/bridge.js                      # 桥接语法自检
 
 - 发现**安全漏洞**请按 [SECURITY.md](SECURITY.md) 的方式处理，不要开公开 issue 贴出可复现的利用细节。
 - 参与讨论请遵守 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)（Contributor Covenant 2.1）。
-- 提交即表示你同意以 **MIT 许可证**（见 [LICENSE](LICENSE)）授权你的贡献。
+- 提交即表示你同意以 **Apache-2.0 许可证**（见 [LICENSE](LICENSE)）授权你的贡献（inbound = outbound）。
 
 谢谢你的贡献 —— 这个项目让"手机指挥、电脑执行"真正能用起来，靠的就是这些细节。

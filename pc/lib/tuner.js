@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * tuner.js —— 几十行的"手工权重前馈打分器"（无需训练、无依赖、微秒级）。

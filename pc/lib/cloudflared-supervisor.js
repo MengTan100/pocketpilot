@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * cloudflared-supervisor.js —— 隧道守护进程（**独立于桥接进程**）。

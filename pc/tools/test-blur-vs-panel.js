@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 决定性实验：面板打开时，把焦点从输入框移走，面板会不会被 DSH 关掉？
 // 变体1：composer.blur()      变体2：plusButton.focus()
 // 只有当"焦点移走后面板依然开着"时，才能用"撤焦点"从根上阻止键盘弹出。

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * tuner-selftest.js —— 验证打分器"该单调的单调、有界、连续、可解释"。

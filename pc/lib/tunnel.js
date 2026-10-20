@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Cloudflare Tunnel 集成：把本机桥接暴露到公网，供手机在异地访问。
  *

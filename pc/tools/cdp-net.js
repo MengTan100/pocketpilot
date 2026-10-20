@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 检查页面加载过的资源与失败的请求，判断会话列表是不是"数据没到"。
 (function () {
   var out = {};

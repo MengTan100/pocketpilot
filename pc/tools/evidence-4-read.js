@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据 4：把记录器的时间序列读回来。
 (function () {
   if (!window.__REC) return JSON.stringify({ ok: false, note: '记录器未安装' });

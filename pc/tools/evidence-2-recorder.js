@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据 2：纯只读记录器。只监听、只记录，绝不 dispatch / preventDefault / blur。
 // 记录：每一次 click（以及我那条判定会不会命中）、每一次 pointerdown、
 //       面板(listbox)出现与消失、焦点变化、aria-expanded 变化。

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * dsh-client.js —— PC 端 DeepSeek Harness Web 实例的受控客户端。

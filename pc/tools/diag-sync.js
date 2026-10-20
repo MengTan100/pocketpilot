@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 探查：手机页面当前显示的对话内容与实时通道状态。
 (function () {
   var out = { url: location.href.slice(0, 90), title: document.title };

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  SPDX-License-Identifier: MIT
+  SPDX-License-Identifier: Apache-2.0
 -->
 <!--
   默认语言 = 英文（Android 惯例：values/ 为兜底语言）。
@@ -143,6 +143,7 @@
     <string name="terms_decline">Exit</string>
     <string name="terms_close">Close</string>
     <!-- 版本与升级入口：显示当前版本，点击询问电脑端有没有新版 -->
+    <string name="license_notice">License: Apache-2.0. Full text in LICENSE; third-party notices in NOTICE.</string>
     <string name="version_row">v%1$s · Check for updates</string>
     <string name="version_checking">v%1$s · Checking…</string>
     <string name="version_up_to_date">Already up to date (v%1$s)</string>

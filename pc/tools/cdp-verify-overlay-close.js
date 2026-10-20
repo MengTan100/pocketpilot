@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证"通用遮罩关闭"方案：不依赖固定坐标，
 // 而是从 listbox 向上找覆盖全屏的遮罩层，然后点它的非 listbox 区域。
 (function () {

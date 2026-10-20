@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 端到端验证：用 CDP 精确事件，验证重构后的完整行为矩阵。
 (function () {
   function findPlus() {

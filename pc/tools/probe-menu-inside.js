@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据：dump 当前打开的模型菜单结构，找出"搜索"元素到底是什么。
 (function () {
   var out = {};

@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * privacy-scan.mjs —— 发布前隐私/密钥扫描（APK / 插件包 / 仓库三处一起查）。
  *
  * 为什么需要它：发布包里最危险的不是代码，而是**本机凭据**——
- * bridge token、API key、真实姓名/路径、设备序列号。之前 LinkSelfTest 里
- * 就写死过一个真实 bridge token（已清除并改写历史）。
+ * 访问令牌、API key、真实姓名/路径、设备序列号。规则只按「形态」匹配，
+ * 扫描器本身不保存任何具体个人信息。
  *
  * 用法:
  *   node privacy-scan.mjs --dir <解包目录> [--dir ...]
@@ -18,8 +18,8 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
-// ⚠️ 必须用 fileURLToPath：路径里含中文（谭猛）时 URL 是百分号编码的，
-// 直接拿 pathname 会得到一个不存在的目录（曾导致 spawnSync git ENOENT）。
+// ⚠️ 必须用 fileURLToPath：路径含非 ASCII 字符时 URL 是百分号编码的，
+// 直接拿 pathname 会得到一个不存在的目录（会表现为 spawnSync git ENOENT）。
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 function bridgeToken() {
@@ -35,9 +35,10 @@ function patterns() {
   const tok = bridgeToken();
   const out = [
     { name: 'bridge token（本机真实凭据）', re: tok ? new RegExp(tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) : null },
-    { name: '真实姓名', re: /谭猛/ },
-    { name: 'QQ / 邮箱号', re: /1655077418/ },
-    { name: '手机设备序列号', re: /a9da9b93/ },
+    // 个人信息类：只按形态匹配，不把任何具体姓名/账号写进仓库
+    { name: '疑似邮箱地址', re: /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/ },
+    { name: '大陆手机号', re: /(?<!\d)1[3-9]\d{9}(?!\d)/ },
+    { name: '疑似设备序列号/机器码', re: /\b[a-f0-9]{8,16}\b(?=.*(?:serial|device|sn))/i },
     { name: 'OpenAI 风格 key', re: /sk-[A-Za-z0-9_-]{20,}/ },
     { name: 'GitHub token', re: /gh[pousr]_[A-Za-z0-9]{20,}/ },
     { name: 'GitHub 细粒度 token', re: /github_pat_[A-Za-z0-9_]{20,}/ },

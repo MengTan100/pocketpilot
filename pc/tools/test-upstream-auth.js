@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * test-upstream-auth.js —— 上游鉴权链路的结构化回归测试（不需要真实桌面端）。

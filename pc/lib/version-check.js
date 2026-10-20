@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * version-check.js —— 「有没有新版本」的唯一判断处（插件面板与手机 App 共用）。
  *

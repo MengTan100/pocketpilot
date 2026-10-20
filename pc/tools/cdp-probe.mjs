@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-probe.mjs —— 用 Edge 的 DevTools 协议加载 DSH 前端，抓取控制台报错与插件执行情况。
  *

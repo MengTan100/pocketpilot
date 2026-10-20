@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * 前端 bundle：把「手机连接」入口放到**侧栏底部、紧挨设置齿轮**的位置，
  * 点击后**居中弹出**配对二维码；设置面板里的区段作为二级入口保留。

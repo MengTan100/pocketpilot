@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 强化版连点测试：连点 12 次（70ms）后，以 25ms 采样 innerH 持续 5 秒。
 // innerH < 700 即键盘弹起（实测键盘为浮层，弹出时把视口从 759 压到 365）。
 (function () {

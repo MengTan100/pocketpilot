@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 手机端独立客户端 —— 构建入口
 //
 // 仓库顺序：**默认官方源**，国内镜像按需开启。

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 点开底部"轮 N 步"按钮，分析弹出的面板结构，
 // 重点看它有没有关闭入口（用户反馈：打开后没有原生的退出界面）。
 (function () {

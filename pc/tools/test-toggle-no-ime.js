@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证：再点「+」收面板，键盘仍不弹。
 (function () {
   function findPlus() {

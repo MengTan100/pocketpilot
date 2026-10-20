@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * measure-cache.js —— 针对 DSH 静态资源的缓存与传输特征做精确测量。

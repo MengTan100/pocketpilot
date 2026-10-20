@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 打开模型菜单并 dump 其中所有可点项（含 aria-haspopup / role / 坐标），
 // 用来确定"哪一项通向带搜索框的模型列表"。
 (function () {

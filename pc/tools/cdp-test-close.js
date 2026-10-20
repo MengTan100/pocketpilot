@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 测试关闭"会话统计"这类 dialog 面板的可行方式。
 // 依次尝试：ESC 键 → 点击遮罩 → 点击面板外部，看哪种能真正关掉。
 (function () {

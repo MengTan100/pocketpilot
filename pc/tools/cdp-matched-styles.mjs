@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-matched-styles.mjs —— 用 CDP 的 CSS 域查"某元素最终被哪些规则影响"。
  *

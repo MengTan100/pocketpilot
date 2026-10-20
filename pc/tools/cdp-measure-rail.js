@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 测量侧栏折叠状态与各列实际宽度（用于验证开合是否真的生效）
 (function () {
   var f = document.querySelector('[class*="_frame"]');

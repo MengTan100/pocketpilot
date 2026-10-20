@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 实测底部面板的开合行为：
 //   点「+」→ 应打开；再点「+」→ 应关闭；点「缓存」→ 应切换而不是叠加。
 (function () {

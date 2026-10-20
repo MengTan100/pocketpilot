@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * remote.js —— 「异地（跨网络）通道」统一提供者层（provider layer）。

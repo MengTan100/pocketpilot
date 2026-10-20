@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 package com.dsh.bridge
 
 /**
@@ -338,8 +338,8 @@ object LinkSelfTest {
         //     [安全] 本地 192.168.0.3 GET /handshake → UNAUTHORIZED   ← 手机局域网 IP
         //   根因：先把 prefs.token 清空再握手，而配对/首次握手本身就要用这个令牌。
         // ================================================================
-        // ⚠️ 自测只用**假令牌**：绝不能把真实 bridge token 写进仓库
-        //    （真令牌一旦随仓库公开，等于把电脑的远程执行权公开）。
+        // ⚠️ 自测一律使用合成数据：这里只验证"握手时是否带着令牌"的顺序逻辑，
+        //    不涉及任何真实凭据。
         val pairedToken = "SELFTEST-ONLY-not-a-real-token"
         // ① 必须带着令牌去握
         allOk = check("配对顺序 握手时仍然带着令牌", pairedToken,

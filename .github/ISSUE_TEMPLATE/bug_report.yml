@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 name: Bug 报告
 description: 报告一个可复现的问题（手机端 App / 电脑端桥接 / DSH 插件）
 title: "[Bug] "

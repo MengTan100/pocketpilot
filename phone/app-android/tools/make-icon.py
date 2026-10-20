@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 """
 从一张**方形成品图**生成 Android 全套应用图标，并抹除右下角的生成器水印。
 

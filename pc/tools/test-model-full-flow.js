@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 复现完整流程：点模型选择器 → 点菜单里的「模型」→ 出现的列表里找搜索框。
 (function () {
   function findModelBtn() {

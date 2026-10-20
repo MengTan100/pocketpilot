@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 深挖：DSH 连接恢复模块的实时状态 + 页面上是否有"重连/断开"提示元素。
 (function () {
   var out = {};

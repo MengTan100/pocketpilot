@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据：模型选择器按钮的属性 + 模型面板结构 + 搜索框。
 (function () {
   var out = {};

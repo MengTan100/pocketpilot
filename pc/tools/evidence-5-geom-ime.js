@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据 5：键盘弹起时，量清楚视口、输入框、面板三者的真实几何，判断面板是否被遮挡。
 (function () {
   var out = {};

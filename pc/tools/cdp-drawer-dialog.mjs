@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-drawer-dialog.mjs —— 用无头 Edge 复现「手机侧栏抽屉打开后，设置/账户点不开」。
  *

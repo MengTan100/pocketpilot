@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * remote-selftest.js —— 异地通道（provider 层 + 持久化隧道）的**可执行行为验证**。

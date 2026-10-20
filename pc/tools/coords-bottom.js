@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 返回底部关键元素的屏幕坐标（供 adb input tap 使用）。
 (function () {
   var DPR = window.devicePixelRatio, OFF_Y = 152;

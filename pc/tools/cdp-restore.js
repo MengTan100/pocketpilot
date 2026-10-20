@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 清除 App 注入到 DSH 页面里的一切内容，让页面回到 DSH 原生状态。
 (function () {
   var root = document.documentElement;

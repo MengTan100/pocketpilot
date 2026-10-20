@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 诊断：连点期间输入框是否拿到过焦点？JS 桥方法是否真的可调用？
 (function () {
   function findPlus() {

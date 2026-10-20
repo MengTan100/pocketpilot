@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # 手机端连接插件（组合包 patch 层）
 #
 # DSH 的加载顺序：bundle 的 patch 先应用，profile 自己的 cordis.patch.yml 随后，

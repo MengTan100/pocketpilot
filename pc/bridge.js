@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * bridge.js —— PocketPilot 守护进程（PC 端）
@@ -1456,6 +1456,7 @@ ${info.remoteHtml}
   ${info.updateActions}
 </div>
 ${embed ? `</details>` : ''}
+<div class="tip">Apache-2.0 · 第三方组件声明见 NOTICE</div>
 <div class="tip">二维码与配对码等同本机操作权限，请勿外发。<br>
 App 里也可点「直接连接」——插着数据线或用同一 WiFi 时会自动发现；<br>
 异地时会自动切换到上面的公网地址。</div>
@@ -1588,7 +1589,7 @@ async function load(){
     '<div class="card"><h2>任务</h2>'+rows(s.tasks||{})+'</div>';
 }
 load(); setInterval(load, 3000);
-</script><!-- ${ORIGIN_MARK} · MIT · 见 README.md --></body></html>`;
+</script><!-- ${ORIGIN_MARK} · Apache-2.0 · 见 README.md --></body></html>`;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);

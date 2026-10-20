@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 package com.dsh.bridge
 
 import android.annotation.SuppressLint
@@ -468,6 +468,9 @@ class MainActivity : AppCompatActivity() {
         appendTerms(sb, "English", TERMS_EN)
         sb.append("\n")
         sb.append(getString(R.string.terms_version_note, TERMS_VERSION))
+        // 开源协议也写在这里：用户点「免责声明与使用须知」就能看到本项目以什么协议发布，
+        // 不必去翻仓库（协议全文见仓库 LICENSE，第三方组件声明见 NOTICE）。
+        sb.append("\n\n").append(getString(R.string.license_notice))
         return sb
     }
 

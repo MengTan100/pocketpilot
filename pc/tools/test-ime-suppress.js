@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 验证：面板开后，键盘是否被持续压制。
 // 步骤：1) .click() 开面板  2) 立即聚焦输入框（模拟 DSH 抢焦点）  3) 轮询 innerH 看键盘有没有顶起
 (function () {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * CDP 设备模拟：把 WebView 的视口临时改成指定尺寸，用来验证
  * DSH 的响应式行为（例如"宽屏下侧栏是否会出现会话列表"）。

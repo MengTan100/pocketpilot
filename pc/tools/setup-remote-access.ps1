@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 # setup-remote-access.ps1
 # 跨网络（手机在别的 WiFi / 4G，PC 在家里）访问准备：检测穿透通道、给出可选方案、自动登记地址。
 #

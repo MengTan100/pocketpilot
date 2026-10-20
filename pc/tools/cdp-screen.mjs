@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * cdp-screen.mjs —— 连上手机 WebView，重载页面并抓"白屏"证据。
  *

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 'use strict';
 /**
  * measure-web.js —— 量化 DSH Web 前端的加载成本，为延迟优化定位瓶颈。

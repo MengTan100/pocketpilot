@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 点击 DSH 自己的「打开侧边栏」按钮，把真正的侧栏（工作区 + 会话列表）展开，
 // 然后回报侧栏里出现了哪些条目。用来验证会话列表究竟能不能显示。
 (function () {

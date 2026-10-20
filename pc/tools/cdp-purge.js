@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 彻底清除 App 注入进 DSH 页面的一切痕迹，并让页面重新渲染。
 //
 // 重点清理对象：

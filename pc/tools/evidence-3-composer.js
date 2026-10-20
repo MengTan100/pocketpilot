@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据 3：找出真正的输入框（不是 textarea），并给出它的 CSS 坐标。
 (function () {
   var out = {};

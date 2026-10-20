@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Host 侧入口：**让插件自己把桥接拉起来**，不再需要用户先手动双击 start-bridge.bat。
  *

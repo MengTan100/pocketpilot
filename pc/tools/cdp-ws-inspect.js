@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 检查页面里 WebSocket 的痕迹（不依赖 CDP 事件，直接问页面）
 (function () {
   var out = {};

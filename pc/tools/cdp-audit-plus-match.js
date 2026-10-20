@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 // 证据：列出页面上所有 button[aria-label]，逐个检查我的判断逻辑会不会误命中。
 (function () {
   var all = document.querySelectorAll('button[aria-label]');

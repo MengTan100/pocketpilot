@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * CDP 求值工具：在手机 WebView 里执行一段 JS 并把结果打回来。
  *

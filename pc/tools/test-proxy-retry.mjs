@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 /**
  * 验证 401 自愈重试时请求体是否被完整重发。
  *
