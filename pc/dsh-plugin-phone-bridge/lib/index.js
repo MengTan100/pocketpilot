@@ -158,6 +158,10 @@ export function apply(ctx) {
     run();
     // DSH 可能先于网络栈就绪；再补一次延迟尝试（幂等：已在跑就 reuse）。
     const timer = setTimeout(run, 8000);
+    // 定时兜底：桥接可能被用户关掉、崩掉，或比 DSH 晚启动。
+    // 每 60 秒确认一次（已在跑就 reuse，不会重复拉起），保证"插件在 = 桥接在"。
+    const keepAlive = setInterval(run, 60000);
+    if (typeof keepAlive.unref === "function") keepAlive.unref();
     if (typeof timer.unref === 'function') timer.unref();
   } catch (error) {
     console.warn('[phone-bridge] 初始化异常（已忽略，不影响 DSH）：' + (error && error.message ? error.message : error));

@@ -141,7 +141,31 @@ function createDshProxy(options) {
                 outHeaders['cache-control'] = 'public, max-age=31536000, immutable';
             }
             res.writeHead(proxyRes.statusCode || 502, outHeaders);
-            proxyRes.pipe(res);
+            const ctype = String(outHeaders["content-type"] || "");
+
+            // ⚠️ 必须改写 <base>：DSH 首页现在输出 <base href="/">，而手机是经 /dsh/ 前缀访问的。
+            // 不改写时，页面会去 /assets/... 取资源 → 全部 404 → 用户看到**纯白屏**（实测）。
+            // 旧版 DSH 输出 <base href="./">，两种写法都要处理。
+            if (ctype.includes("text/html")) {
+                const chunks = [];
+                proxyRes.on("data", (c) => chunks.push(c));
+                proxyRes.on("end", () => {
+                    let html = Buffer.concat(chunks).toString("utf8");
+                    const before = html;
+                    html = html
+                        .replace(/<base\s+href=["']\/["']/i, '<base href="/dsh/"')
+                        .replace(/<base\s+href=["']\.\/["']/i, '<base href="/dsh/"');
+                    if (html !== before) log(`proxy 改写 <base> → /dsh/（${target}）`);
+                    const buf = Buffer.from(html, "utf8");
+                    outHeaders["content-length"] = String(buf.length);
+                    delete outHeaders["transfer-encoding"];
+                    res.writeHead(proxyRes.statusCode || 502, outHeaders);
+                    res.end(buf);
+                });
+            } else {
+                res.writeHead(proxyRes.statusCode || 502, outHeaders);
+                proxyRes.pipe(res);
+            }
             if (target === '/' || target.startsWith('/api/')) {
                 log(`proxy ${req.method} ${target} -> ${proxyRes.statusCode} (${Date.now() - started}ms)`);
             }
