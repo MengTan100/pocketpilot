@@ -154,4 +154,6 @@
       详见 README.md；改这里要同步改 tools/watermark-lib.mjs 的 PROJECT_ID / PAYLOAD_TEXT。
     -->
     <string name="project_origin_marker" translatable="false">dsh-phone-bridge/DSPB2026 · MIT · 见 README.md</string>
+    <string name="back_to_entry">Returned to the entry page</string>
+    <string name="back_again_to_exit">Press back again to exit</string>
 </resources>

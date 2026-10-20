@@ -275,6 +275,13 @@ class MainActivity : AppCompatActivity() {
         // 侧栏把手：调用 DSH 自己的折叠按钮，用它维护的状态
         binding.btnRailToggle.setOnClickListener { toggleDshSidebar() }
 
+        // 返回键：**逐层退出**，而不是一点就退 App。
+        // 优先级：页面浮层（侧栏抽屉 / 弹窗）→ 页面历史 → 入口页 → 再按一次退到后台。
+        // 以前没有接管返回键，系统默认直接 finish()，用户"一按就没了"。
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { handleBackPress() }
+        })
+
         // 同步胶囊：点它 = 手动触发一次确定性重同步（走 DSH 官方恢复路径）
         binding.syncChip.setOnClickListener {
             toast(getString(R.string.sync_resync_started))
@@ -676,6 +683,91 @@ class MainActivity : AppCompatActivity() {
         guardedReconnect()
     }
 
+    // ---------------------------------------------------------------- 返回键
+
+    /** 上一次处理返回键的时间（去抖：一次手势偶尔会送两个 BACK 事件）。 */
+    private var lastBackAt = 0L
+    /** 上一次"再按一次退出"的时间。 */
+    private var lastExitAt = 0L
+
+    /**
+     * 页面里"能被返回键关掉"的东西：侧栏抽屉与弹窗。
+     *
+     * 只读判断 + 真的存在才动手；素材全部走 DSH 自己的状态
+     * （data-sidebar-collapsed / role=dialog），不自己另造状态。
+     */
+    private val BACK_OVERLAY_JS = """
+        (function () {
+          var frame = document.querySelector('[class*="_frame"]');
+          if (frame && frame.getAttribute('data-sidebar-collapsed') !== 'true') {
+            var toggles = document.querySelectorAll('[class*="_toggle"]');
+            for (var i = 0; i < toggles.length; i++) {
+              var label = toggles[i].getAttribute('aria-label') || '';
+              if (label.indexOf('收起') >= 0) { toggles[i].click(); return 'drawer'; }
+            }
+          }
+          var dialogs = document.querySelectorAll('[role="dialog"]');
+          for (var j = dialogs.length - 1; j >= 0; j--) {
+            var d = dialogs[j];
+            var r = d.getBoundingClientRect();
+            if (r.width < 10 || r.height < 10) continue;
+            var close = d.querySelector('[aria-label*="关闭"],[aria-label*="Close"]');
+            if (close) { close.click(); return 'dialog'; }
+            var esc = new KeyboardEvent('keydown', {
+              key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true
+            });
+            document.dispatchEvent(esc);
+            return 'dialog';
+          }
+          return 'none';
+        })()
+    """.trimIndent()
+
+    /**
+     * 返回键总入口：**逐层退出**。
+     *
+     * 顺序（每层都先判断"真的处在这一层"）：
+     *   ① 页面浮层：侧栏抽屉开着 → 收起；弹窗开着 → 关掉；
+     *   ② 页面历史：WebView 还能后退 → 退一页（DSH 自己的路由/会话切换）；
+     *   ③ 对话页 → 回到入口页（连接保持，不杀进程，随时可再进入）；
+     *   ④ 入口页 → "再按一次退出"，确认后退到后台（不结束进程，连接还在）。
+     *
+     * ⚠️ 不直接 finish()：DSH 的页面与 WebSocket 一旦销毁，回来要重新连接、
+     *    重新加载整页（几秒白屏）；退到后台则下次打开即恢复。
+     */
+    private fun handleBackPress() {
+        val now = System.currentTimeMillis()
+        if (now - lastBackAt < 250) return
+        lastBackAt = now
+
+        if (binding.welcomePanel.visibility == View.VISIBLE) {
+            exitWithConfirm()
+            return
+        }
+
+        binding.webView.evaluateJavascript(BACK_OVERLAY_JS) { raw ->
+            if (raw != null && (raw.contains("drawer") || raw.contains("dialog"))) return@evaluateJavascript
+            if (binding.webView.canGoBack()) {
+                binding.webView.goBack()
+                return@evaluateJavascript
+            }
+            toast(getString(R.string.back_to_entry))
+            showWelcome(true)
+        }
+    }
+
+    /** 再按一次退出：2 秒内第二次才真的退到后台。 */
+    private fun exitWithConfirm() {
+        val now = System.currentTimeMillis()
+        if (now - lastExitAt in 1..2000) {
+            lastExitAt = 0
+            moveTaskToBack(true)
+            return
+        }
+        lastExitAt = now
+        toast(getString(R.string.back_again_to_exit))
+    }
+
     /**
      * ⚠️ 必须覆盖它，否则"启动默认停在入口页"会被系统偷偷推翻。
      *
@@ -894,11 +986,22 @@ class MainActivity : AppCompatActivity() {
                   root.setAttribute('data-dsh-compact', 'true');
                 }
 
-                // 3) 移动端加强：收起侧栏时把 56px 图标条也隐藏，让对话真正铺满。
-                //    依据（CDP 实测）：布局容器 [class*="_frame"] 是 display:grid，
-                //    状态属性 data-sidebar-collapsed，DSH 自己的内联样式为
-                //      grid-template-columns: 56px minmax(0,1fr) minmax(0,0px)
-                //    这里只覆盖"已收起"这一态的第 1 列，第 3 列保持 DSH 原值。
+                // 3) 移动端侧栏：**覆盖式抽屉**。
+                //
+                //    根因（CDP 实测 2026-10-20）：DSH 在窄屏把 _sidebarCol 放进 grid 的第 1 行，
+                //    而那一行是 0 高度 —— 点开侧栏后它仍然是 394x0，所以"点了箭头什么也没出现"，
+                //    用户看到的就是"点几下只闪一下、打不开"。侧栏内容其实是完整的
+                //    （会话列表、工作区、插件、账户都在），只是被排成了 0 高。
+                //
+                //    做法：收起态维持原样（整列藏掉，对话铺满）；展开态把它变成
+                //    position:fixed 的抽屉覆盖在对话之上，并配一层遮罩（点遮罩关闭）。
+                //    只在**展开**时改变定位，收起时仍是原来的网格项 —— 这样右侧详情页
+                //    （依赖 frame 的 grid-template-columns 规则）不受影响。
+                // 抽屉底色：直接读 frame 的计算样式（深/浅主题都正确，不猜颜色）
+                var drawerFrame = document.querySelector('[class*="_frame"]');
+                var drawerBg = drawerFrame ? getComputedStyle(drawerFrame).backgroundColor : '';
+                if (!drawerBg || drawerBg === 'rgba(0, 0, 0, 0)' || drawerBg === 'transparent') drawerBg = '#ffffff';
+
                 var STYLE_ID = '__dshRailBoost';
                 var old = document.getElementById(STYLE_ID);
                 if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -916,9 +1019,64 @@ class MainActivity : AppCompatActivity() {
                   'html[data-rail-boost="1"] [class*="_frame"][data-sidebar-collapsed="true"] [class*="_centerCol"] {',
                   '  padding-left: 0 !important;',
                   '}',
+                  // —— 展开态：抽屉 ——
+                  'html[data-dsh-compact="true"] [class*="_frame"]:not([data-sidebar-collapsed="true"]) [class*="_sidebarCol"] {',
+                  '  position: fixed !important;',
+                  '  left: 0 !important; top: 0 !important; bottom: 0 !important;',
+                  '  width: min(320px, 86vw) !important;',
+                  '  height: 100% !important;',
+                  '  z-index: 2147482000 !important;',
+                  '  background: ' + drawerBg + ' !important;',
+                  '  box-shadow: 6px 0 24px rgba(0,0,0,.18) !important;',
+                  '  transform: none !important;',
+                  '  opacity: 1 !important;',
+                  '  pointer-events: auto !important;',
+                  '  overflow: hidden !important;',
+                  '  transition: transform .18s ease !important;',
+                  '}',
+                  'html[data-dsh-compact="true"] [class*="_frame"]:not([data-sidebar-collapsed="true"]) [class*="_sidebarCol"] > * {',
+                  '  height: 100% !important;',
+                  '  max-height: 100% !important;',
+                  '}',
+                  // —— 遮罩：点空白处关闭 ——
+                  '#__dshSidebarScrim {',
+                  '  position: fixed; inset: 0; z-index: 2147481000;',
+                  '  background: rgba(0,0,0,.28); display: none;',
+                  '}',
+                  'html[data-dsh-drawer="1"] #__dshSidebarScrim { display: block; }',
                 ].join('\n');
                 (document.head || root).appendChild(style);
                 root.setAttribute('data-rail-boost', '1');
+
+                // 3.1) 遮罩元素 + 点击关闭（点遮罩 = 点 DSH 自己的"收起侧边栏"）
+                var SCRIM_ID = '__dshSidebarScrim';
+                var scrim = document.getElementById(SCRIM_ID);
+                if (!scrim) {
+                  scrim = document.createElement('div');
+                  scrim.id = SCRIM_ID;
+                  document.body.appendChild(scrim);
+                }
+                scrim.onclick = function () {
+                  var list = document.querySelectorAll('[class*="_toggle"]');
+                  for (var i = 0; i < list.length; i++) {
+                    var lab = list[i].getAttribute('aria-label') || '';
+                    if (lab.indexOf('收起') >= 0
+                        && (lab.indexOf('边栏') >= 0 || lab.indexOf('侧栏') >= 0)) {
+                      list[i].click();
+                      return;
+                    }
+                  }
+                };
+
+                // 3.2) 开合状态同步：DSH 的 data-sidebar-collapsed 是唯一事实来源，
+                //      这里只把它翻译成 html[data-dsh-drawer]，供上面的 CSS 用。
+                if (window.__dshDrawerSync) clearInterval(window.__dshDrawerSync);
+                window.__dshDrawerSync = setInterval(function () {
+                  var f = document.querySelector('[class*="_frame"]');
+                  if (!f) return;
+                  if (f.getAttribute('data-sidebar-collapsed') === 'true') root.removeAttribute('data-dsh-drawer');
+                  else root.setAttribute('data-dsh-drawer', '1');
+                }, 400);
 
                 // 4) 统计/设置这类面板**不要撑满全屏**。
                 //    mobile_optimize.css 里原本把它们写成 calc(100vw - 16px) 全屏，

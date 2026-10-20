@@ -146,4 +146,6 @@
     <string name="terms_close">关闭</string>
     <string name="terms_settings_entry">免责声明与使用须知</string>
     <string name="terms_version_note">条款版本 %1$d · 首次连接前必须确认</string>
+    <string name="back_to_entry">已返回入口页</string>
+    <string name="back_again_to_exit">再按一次退出</string>
 </resources>
