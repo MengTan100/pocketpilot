@@ -1091,7 +1091,10 @@ class MainActivity : AppCompatActivity() {
                   '  left: 0 !important; top: 0 !important; bottom: 0 !important;',
                   '  width: min(320px, 86vw) !important;',
                   '  height: 100% !important;',
-                  '  z-index: 2147482000 !important;',
+                  // ⚠️ z-index 必须**低于 DSH 自己的弹层**（实测账号菜单 role=menu 是 1100）。
+                  //    曾经写成 2147482000，结果抽屉把账号菜单/设置面板整个盖住，
+                  //    用户看到的就是"设置和账户点不开"。1000 仍高于对话内容，但让位给 DSH 的 1100+。
+                  '  z-index: 1000 !important;',
                   '  background: ' + drawerBg + ' !important;',
                   '  box-shadow: 6px 0 24px rgba(0,0,0,.18) !important;',
                   '  transform: none !important;',
@@ -1106,7 +1109,7 @@ class MainActivity : AppCompatActivity() {
                   '}',
                   // —— 遮罩：点空白处关闭 ——
                   '#__dshSidebarScrim {',
-                  '  position: fixed; inset: 0; z-index: 2147481000;',
+                  '  position: fixed; inset: 0; z-index: 900;',
                   '  background: rgba(0,0,0,.28); display: none;',
                   '}',
                   'html[data-dsh-drawer="1"] #__dshSidebarScrim { display: block; }',
@@ -1140,8 +1143,26 @@ class MainActivity : AppCompatActivity() {
                 window.__dshDrawerSync = setInterval(function () {
                   var f = document.querySelector('[class*="_frame"]');
                   if (!f) return;
-                  if (f.getAttribute('data-sidebar-collapsed') === 'true') root.removeAttribute('data-dsh-drawer');
-                  else root.setAttribute('data-dsh-drawer', '1');
+                  if (f.getAttribute('data-sidebar-collapsed') === 'true') {
+                    root.removeAttribute('data-dsh-drawer');
+                    return;
+                  }
+                  root.setAttribute('data-dsh-drawer', '1');
+                  // 3.2.1) 兜底：抽屉开着时如果 DSH 弹出**对话框**（设置面板等），
+                  //        就先把抽屉收起 —— 对话框的层级不一定比抽屉高，盖住就等于"点不开"。
+                  //        注意只认 dialog/alertdialog：账号菜单是 role=menu，它本来就贴着侧栏，
+                  //        层级也已高于抽屉（1100 > 1000），收抽屉反而会让菜单跟着消失。
+                  var panels = document.querySelectorAll('[role="dialog"],[role="alertdialog"]');
+                  for (var i = 0; i < panels.length; i++) {
+                    var r = panels[i].getBoundingClientRect();
+                    if (r.width > 80 && r.height > 40) {
+                      var ts = document.querySelectorAll('[class*="_toggle"]');
+                      for (var j = 0; j < ts.length; j++) {
+                        var lab = ts[j].getAttribute('aria-label') || '';
+                        if (lab.indexOf('收起') >= 0 && lab.indexOf('边栏') >= 0) { ts[j].click(); return; }
+                      }
+                    }
+                  }
                 }, 400);
 
                 // 4) 统计/设置这类面板**不要撑满全屏**。
