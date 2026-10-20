@@ -28,6 +28,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.lifecycle.lifecycleScope
 import com.dsh.bridge.databinding.ActivityMainBinding
 import com.journeyapps.barcodescanner.ScanContract
@@ -1646,7 +1649,73 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------------------------------------------------------- 看门狗
 
+
+    /**
+     * 网络变化即时切换（"拔线最多闪一下"的关键）。
+     *
+     * 为什么必须单独监听：看门狗是 4 秒轮询，拔数据线 / WiFi 切移动数据 / 隧道被回收之后，
+     * 用户要等最容易 4~9 秒才看到切换。系统的默认网络回调在变化当刻就会触发，
+     * 这里只做一件轻量的事：**立刻探一次当前通道**，不通就马上重新选路。
+     * 不做无条件的整页重连 —— 那会打断用户正在做的事（输入、滚动、面板）。
+     */
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastNetworkEventAt = 0L
+    
+    private fun startNetworkWatcher() {
+        if (networkCallback != null) return
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = onNetworkChanged("网络可用")
+            override fun onLost(network: Network) = onNetworkChanged("网络断开")
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return
+                onNetworkChanged("网络能力变化")
+            }
+        }
+        networkCallback = cb
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            BridgeLog.info("已启用网络变化监听（切换通道可即时生效）")
+        } catch (t: Throwable) {
+            networkCallback = null
+            BridgeLog.warn("网络变化监听注册失败：" + (t.message ?: t.javaClass.simpleName))
+        }
+    }
+    
+    private fun stopNetworkWatcher() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (t: Throwable) { /* 忽略 */ }
+    }
+    
+    private fun onNetworkChanged(reason: String) {
+        // 去抖：同一次切换会连发 onLost/onAvailable/onCapabilitiesChanged 三个回调，
+        // 不去抖会连开三次并发探测，反而更慢。
+        val now = System.currentTimeMillis()
+        if (now - lastNetworkEventAt < 800) return
+        lastNetworkEventAt = now
+        BridgeLog.info("网络变化（" + reason + "）：立即探活当前通道")
+        lifecycleScope.launch {
+            val base = prefs.lastGoodBase.ifBlank { prefs.baseUrl }
+            if (base.isBlank()) return@launch
+            val timeout = Link.probeTimeoutFor(Link.classify(base).first).toInt()
+            val alive = withContext(Dispatchers.IO) { Bridge.probe(base, timeout) } != null
+            if (alive) {
+                BridgeLog.info("当前通道仍可用，无需切换")
+                return@launch
+            }
+            if (!allowRecovery("网络变化即时切换")) {
+                BridgeLog.info("即时切换被闸门拦下（用户操作中/冷却中/加载中）")
+                return@launch
+            }
+            BridgeLog.heal("网络变化即时切换", reason)
+            val again = withContext(Dispatchers.IO) { doConnect() }
+            if (!again.ok) showConnectFailure(again, quiet = true)
+        }
+    }
+
     private fun startWatchdog() {
+        startNetworkWatcher()
         if (watchdog?.isActive == true) return
         watchdog = lifecycleScope.launch {
             var failures = 0
@@ -2383,6 +2452,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        stopNetworkWatcher()
         watchdog?.cancel()
         super.onDestroy()
     }

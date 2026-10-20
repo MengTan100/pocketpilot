@@ -85,9 +85,17 @@ function alive(pid) {
 
 let child = null;
 let publicUrl = null;
+// 本次启动后日志新增部分的起点（字节偏移）。
+// 必须记：日志是追加写，若每次都解析末尾，会一直读到**上一个**进程留下的地址，
+// 表现为"隧道其实已建好，桥接却探活 530 并无限重建"。
+let logOffsetAtLaunch = 0;
 let startedAt = Date.now();
 let logFd = null;
 let stopping = false;
+// 重启退避：Cloudflare 对"快速隧道"有频率限制（429 / error 1015）。
+// 实测教训：调试时短时间重启几十次就直接被限流，此时**继续每 3 秒重试只会延长封锁**。
+let restartDelayMs = 5000;
+const RESTART_MAX_MS = 300000;
 
 /**
  * 启动 cloudflared。
@@ -104,6 +112,8 @@ function launch() {
     return false;
   }
   try {
+    // 记录本次启动前的日志长度：后面只解析它之后新增的内容
+    try { logOffsetAtLaunch = fs.statSync(logFile).size; } catch { logOffsetAtLaunch = 0; }
     logFd = fs.openSync(logFile, 'a');
   } catch {
     logFd = null;
@@ -121,6 +131,7 @@ function launch() {
     return false;
   }
 
+  publicUrl = null;   // 新进程还没有地址，等日志解析出来
   startedAt = Date.now();
   // 先落一条"已启动、地址待定"的记录：桥接据此知道隧道正在建立，而不是"没有隧道"。
   writeRecord({
@@ -153,7 +164,11 @@ function launch() {
     // 意外退出：记录标记为失败，桥接的看门狗会看到并重建
     writeRecord({ pid: null, publicUrl: null, startedAt, state: 'failed', lastError: `cloudflared 退出 code=${code}`, target, logFile });
     // 自己重试一次（守护进程也可能被 Cloudflare 回收连接）
-    setTimeout(() => { if (!stopping) launch(); }, 3000).unref();
+    // 退避重试（不要固定 3 秒：那会把 Cloudflare 的限流越撞越久）
+    const wait = restartDelayMs;
+    appendLog(`cloudflared 异常退出，${Math.round(wait / 1000)} 秒后重试（退避中，最高 5 分钟）`);
+    restartDelayMs = Math.min(RESTART_MAX_MS, Math.round(restartDelayMs * 2));
+    setTimeout(() => { if (!stopping) launch(); }, wait).unref();
   });
 
   return true;
@@ -163,11 +178,21 @@ function launch() {
 function pollUrl() {
   const timer = setInterval(() => {
     let text = '';
-    try { text = fs.readFileSync(logFile, 'utf8').slice(-65536); } catch { /* 忽略 */ }
+    // 只读本次启动之后新增的日志（见 logOffsetAtLaunch 注释）。
+    try {
+      const size = fs.statSync(logFile).size;
+      const from = Math.max(0, Math.min(logOffsetAtLaunch, size));
+      const fd = fs.openSync(logFile, 'r');
+      const buf = Buffer.alloc(Math.max(0, Math.min(size - from, 65536)));
+      fs.readSync(fd, buf, 0, buf.length, from);
+      fs.closeSync(fd);
+      text = buf.toString('utf8');
+    } catch { /* 忽略：下一轮再试 */ }
     const found = extractUrl(text);
     if (found && found !== publicUrl) {
       publicUrl = found;
       appendLog(`隧道地址就绪：${publicUrl}`);
+      restartDelayMs = 5000;   // 成功拿到地址 → 退避复位
       writeRecord({
         pid: child ? child.pid : readRecord()?.pid || null,
         publicUrl,

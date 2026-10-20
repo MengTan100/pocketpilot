@@ -36,6 +36,21 @@ const { createDshProxy } = require('./lib/dsh-proxy');
 // PC 在 NAT 后无公网入口，而手机端不装额外 App，只能由 PC 主动出站建隧道。
 // provider 层见 lib/remote.js（隧道由独立守护进程持有，桥接重启复用同一地址）。
 const { createRemoteLayer } = require('./lib/remote');
+const tuner = require('./lib/tuner');
+
+// 隧道重建冷却：Cloudflare 对快速隧道限流时（HTTP 429 / error 1015），
+// 若每 5 秒重试一次，不仅没用，还会让限流持续更久（实测踩过）。
+// 失败后按指数退避冷却：30s → 60s → 120s → 300s。
+let tunnelRetryAt = 0;
+let tunnelRetryDelayMs = 30000;
+const TUNNEL_RETRY_MAX_MS = 300000;
+function tunnelCoolingDown() { return Date.now() < tunnelRetryAt; }
+function noteTunnelFailure(reason) {
+  tunnelRetryAt = Date.now() + tunnelRetryDelayMs;
+  log(`隧道重建进入冷却 ${Math.round(tunnelRetryDelayMs / 1000)}s（原因：${reason}）` +
+      (/429|1015|Too Many/i.test(String(reason)) ? " —— Cloudflare 限流：请等待几分钟，局域网/USB 不受影响" : ""));
+  tunnelRetryDelayMs = Math.min(TUNNEL_RETRY_MAX_MS, tunnelRetryDelayMs * 2);
+}
 
 /** 二维码生成：局部依赖，缺失时降级为纯文本配对信息。 */
 let qrcode = null;
@@ -880,6 +895,30 @@ function bridgeRuntime() {
       tunnelPid: cf.pid || null,
       remoteStable: remote.hasStable(),
       remoteNote: remote.note(),
+      // 建议超时：直接告诉手机端"这类链路该等多久"。
+      // 为什么由电脑端下发：三类链路的最佳值差一个数量级（本机几十毫秒、隧道 1~2 秒），
+      // 客户端写死任何一个值都必然在另一类链路上误判（写 1.2s 会让异地永远超时）。
+      // 由 lib/tuner.js 按**实测健康度**给出建议值（手工权重的微型前馈网络，无需训练）。
+      // 输入全部来自真实测量：隧道的 /health 往返毫秒与成败计数（见 lib/tunnel.js 的 health）。
+      // 没有样本时它退回按链路类型的基线，不会瞎猜。
+      timeouts: (() => {
+        const th = (cf && cf.health) || {};
+        const linkMode = remoteBases.length > 0 ? 'remote' : (config.mode === 'usb' ? 'usb' : 'lan');
+        const tune = tuner.suggest({
+          mode: linkMode,
+          rttMs: th.samples > 0 ? th.rttMs : null,
+          failRate: th.failRate || 0,
+          reconnects: 0,
+        });
+        return {
+          usb: 1200,
+          lan: 1300,
+          remote: tune.probeTimeoutMs,
+          handshake: tune.handshakeTimeoutMs,
+          retries: tune.retries,
+          tunerNote: tune.explain,
+        };
+      })(),
       // 统一入口：桥接反代（内部自动选桌面端/桥接实例，并补静态资源缓存头）
       proxyEntry: phoneEntryUrl(),
       proxyEntryLan: config.lanAddresses.map((entry) => `http://${entry.address}:${config.bridgePort}/dsh/`

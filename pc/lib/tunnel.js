@@ -240,6 +240,13 @@ function createPersistentTunnel(options = {}) {
   const pidFile = path.join(runtimeDir, 'cloudflared.pid');
 
   const isAlive = deps.isAlive || isProcessAlive;
+  // 健康检查的实测统计：给"参数打分器"（lib/tuner.js）当输入。
+  // 只统计**真实发生**的检查，不做任何推测；样本不足时 tuner 会退回到按链路的基线值。
+  let healthOk = 0;
+  let healthFail = 0;
+  let lastRttMs = null;
+  let lastHealthAt = 0;
+
   const checkUrl = deps.httpStatus || ((url) => httpStatus(url, 5000, require('node:https')));
   const readRecord = deps.readRecord || (() => readJsonSafe(recordFile));
   const writeRecord = deps.writeRecord || ((value) => writeJsonAtomic(recordFile, value));
@@ -250,6 +257,11 @@ function createPersistentTunnel(options = {}) {
   /** 本进程内已确认的隧道信息（避免每 5 秒轮询都读盘）。 */
   let cached = null;
   let lastAnnouncedUrl = null;
+  // 重建冷却：Cloudflare 对快速隧道限流（HTTP 429 / error 1015）时，
+  // 每 5 秒重建一次只会让限流持续更久（实测踩过：越重试越久建不起来）。
+  let retryAt = 0;
+  let retryDelayMs = 30000;
+  const RETRY_MAX_MS = 300000;
 
   /** 当前记录（磁盘为准）。 */
   function record() {
@@ -260,7 +272,12 @@ function createPersistentTunnel(options = {}) {
   async function recordHealthy(rec) {
     if (!rec || !rec.pid || !rec.publicUrl) return { ok: false, reason: '记录不完整' };
     if (!isAlive(rec.pid, 'cloudflared')) return { ok: false, reason: `进程 ${rec.pid} 已不存在` };
+    const t0 = now();
     const code = await checkUrl(`${rec.publicUrl}/health`);
+    // 记录实测往返与成败：这是 tuner 唯一可信的输入来源。
+    lastRttMs = now() - t0;
+    lastHealthAt = now();
+    if (code === 200) healthOk += 1; else healthFail += 1;
     if (code !== 200) return { ok: false, reason: `地址不可用（HTTP ${code === null ? '不可达' : code}）` };
     return { ok: true };
   }
@@ -381,13 +398,39 @@ function createPersistentTunnel(options = {}) {
    * 桥接的 5 秒轮询会调用它，于是隧道一死就会被重建，新地址立刻被发布出去。
    */
   async function watch() {
+    if (now() < retryAt) {
+      return { ok: false, coolingDown: true, retryInMs: retryAt - now() };
+    }
     const rec = record();
+      // ⚠️ 关键：记录里"有 pid 但还没有地址"= 隧道**正在建立**，必须等它，绝不能重建。
+      // 踩过的坑：此前这一状态被判成"记录不完整 → 重建"，而新隧道要几秒才拿到地址，
+      // 于是每 5 秒重建一次 —— cloudflared 越堆越多、地址永远对不上，
+      // 用户看到的就是"异地连不上 / 时好时坏"（HTTP 530）。
+      if (!rec.publicUrl) {
+        const age = now() - Number(rec.startedAt || 0);
+        const aliveNow = isAlive(rec.pid, "cloudflared");
+        if (aliveNow && age < 45000) {
+          return { ok: true, starting: true, pid: rec.pid, publicUrl: null };
+        }
+        // 冷却 + 指数退避：限流期间继续重试毫无意义
+        retryAt = now() + retryDelayMs;
+        retryDelayMs = Math.min(RETRY_MAX_MS, retryDelayMs * 2);
+        log("看门狗：隧道记录无地址且进程不健康（alive=" + aliveNow + " age=" + Math.round(age / 1000) + "s），重建");
+        try { fs.unlinkSync(recordFile); } catch { /* 忽略 */ }
+        return start();
+      }
     if (!rec || !rec.pid) {
+      // 冷却 + 指数退避：限流期间继续重试毫无意义
+      retryAt = now() + retryDelayMs;
+      retryDelayMs = Math.min(RETRY_MAX_MS, retryDelayMs * 2);
       log('看门狗：没有隧道记录，重新建立');
       return start();
     }
     const health = await recordHealthy(rec);
     if (!health.ok) {
+      // 冷却 + 指数退避：限流期间继续重试毫无意义
+      retryAt = now() + retryDelayMs;
+      retryDelayMs = Math.min(RETRY_MAX_MS, retryDelayMs * 2);
       log(`看门狗：隧道不可用（${health.reason}），自动重建`);
       // 清理掉失效记录，避免下次又拿它去复用（守护进程也会自己重建）
       try { fs.unlinkSync(recordFile); } catch { /* 删不掉也无妨 */ }
@@ -401,6 +444,7 @@ function createPersistentTunnel(options = {}) {
     }
     cached = rec;
     return { ok: true, publicUrl: rec.publicUrl, pid: rec.pid, reused: true };
+    retryDelayMs = 30000;   // 成功 → 冷却复位
   }
 
   /** 状态（发布给手机/状态页用；地址**实时**读盘，绝不用启动快照）。 */
@@ -408,6 +452,13 @@ function createPersistentTunnel(options = {}) {
     const rec = record();
     if (!rec || !rec.pid || !rec.publicUrl) {
       return {
+        // 供 tuner 使用的实测健康度（样本为 0 时不伪造）
+        health: {
+          rttMs: lastRttMs,
+          samples: healthOk + healthFail,
+          failRate: (healthOk + healthFail) > 0 ? healthFail / (healthOk + healthFail) : 0,
+          lastAt: lastHealthAt,
+        },
         state: 'starting',
         publicUrl: null,
         lastError: rec && rec.lastError ? rec.lastError : null,
