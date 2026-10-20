@@ -1165,11 +1165,12 @@ class MainActivity : AppCompatActivity() {
                   }
                 }, 400);
 
-                // 4) 统计/设置这类面板**不要撑满全屏**。
-                //    mobile_optimize.css 里原本把它们写成 calc(100vw - 16px) 全屏，
-                //    结果是把底部的开合按钮整个盖住，变成"打开后关不掉"。
-                //    这里改回 PC 端那样的居中弹窗：留出边距、限制最大尺寸，
-                //    四周露出的遮罩本身就可以点，关闭途径自然恢复。
+                // 4) 设置/账户这类面板：手机上**铺满**（用户要求：不要小窗）。
+                //
+                //    为什么以前写成小窗：早期 mobile_optimize.css 把它写成全屏时，
+                //    底部按钮被遮住、看着像"关不掉"，于是退回居中小窗。
+                //    现在 DSH 的对话框右上角本来就有 ×（关闭），铺满反而更好用；
+                //    宽度几乎占满、高度按内容增长但最多到视口高度，内容自己滚动。
                 (function () {
                   var ID = '__dshPanelSize';
                   var old = document.getElementById(ID);
@@ -1177,15 +1178,21 @@ class MainActivity : AppCompatActivity() {
                   var st = document.createElement('style');
                   st.id = ID;
                   st.textContent = [
-                    'html[data-dsh-compact="true"] [role="dialog"][class*="_panel"] {',
-                    '  width: auto !important;',
-                    '  max-width: min(420px, calc(100vw - 48px)) !important;',
-                    // 高度也留出上下边距，避免顶到状态栏/底部按钮
+                    'html[data-dsh-compact="true"] [role="dialog"] {',
+                    '  width: calc(100vw - 10px) !important;',
+                    '  max-width: calc(100vw - 10px) !important;',
                     '  height: auto !important;',
-                    '  max-height: min(560px, calc(100vh - 140px)) !important;',
-                    '  border-radius: 14px !important;',
+                    '  max-height: calc(100vh - 24px) !important;',
+                    '  margin: 0 auto !important;',
+                    '  border-radius: 10px !important;',
                     '  box-shadow: 0 8px 32px rgba(0,0,0,.18) !important;',
                     '  overflow: auto !important;',
+                    '}',
+                    // 面板里的横向标签条（设置/账号与余额/通用设置…）在窄屏会挤成一团，
+                    // 铺满后让它横向可滚动，而不是被裁掉。
+                    'html[data-dsh-compact="true"] [role="dialog"] [role="tablist"] {',
+                    '  overflow-x: auto !important;',
+                    '  flex-wrap: nowrap !important;',
                     '}',
                   ].join('\n');
                   (document.head || root).appendChild(st);
