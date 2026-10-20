@@ -1553,9 +1553,13 @@ const server = http.createServer(async (req, res) => {
 
     // USB 模式下手机只能经 adb reverse 到达这里，握手/入口免鉴权；
     // 局域网模式强制鉴权，避免泄漏带 token 的入口地址。
-    // ⚠️ 必须同时要求**回环来源**：桥接已改为始终监听 0.0.0.0（USB+局域网双通道），
-    //    只看 mode 的话，同一 Wi-Fi 下任何设备都能免令牌拿到 /handshake（里面含 bridge token）。
+    // ⚠️ 必须同时满足三个条件：
+    //   ① 非隧道来源 —— cloudflared 跑在本机，公网请求的来源同样是 127.0.0.1，
+    //      只看回环会把"整个互联网"当成本机（实测：公网 /handshake 直接返回了 bridgeToken 明文）；
+    //   ② 回环来源 —— 桥接始终监听 0.0.0.0，同 Wi-Fi 设备不是回环；
+    //   ③ usb 模式 —— 局域网模式一律要令牌。
     const usbOnlyPublic = config.mode === 'usb'
+      && !isExternalRequest(req)
       && isLoopbackRequest(req)
       && (route === '/handshake' || route === '/desktop' || route === '/pair');
     // /pair.json 与 /pair 的内容都含令牌，不能对局域网开放；

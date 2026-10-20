@@ -772,6 +772,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * 重学"异地候选"（隧道地址 / Tailscale 固定地址）。
+     *
+     * 为什么必须周期做：临时隧道（trycloudflare）的域名每次隧道重启都会变，
+     * 而 App **只能在与电脑直连（USB/局域网）时**拿到新地址。用户出门后再也学不到，
+     * 手里那个旧域名自然登不上 —— 之前"异地登录没做好"的表象有很大一部分来自这里。
+     * 每 5 分钟刷新一次，代价是一个 /handshake 请求。
+     */
+    private fun refreshRemoteHints(base: String) {
+        lifecycleScope.launch {
+            val hs = withContext(Dispatchers.IO) { Bridge.handshake(base, prefs.token.ifBlank { null }) }
+            if (!hs.ok) return@launch
+            if (hs.remoteBases.isEmpty()) return@launch
+            val merged = (hs.remoteBases + prefs.remoteHints).filter { it.isNotBlank() }.distinct()
+            val changed = merged != prefs.remoteHints
+            prefs.remoteHints = merged.take(Link.MAX_REMOTE_HINTS)
+            if (changed) {
+                BridgeLog.info("异地候选已刷新(" + merged.size + "): " + merged.joinToString(", "))
+            }
+        }
+    }
+
+    /**
      * 页面加载看门狗：15 秒还没加载完就复位加载态并重新选路。
      *
      * 为什么必须有它（真实事故 18:18 拔线）：
@@ -1930,10 +1952,17 @@ class MainActivity : AppCompatActivity() {
         if (watchdog?.isActive == true) return
         watchdog = lifecycleScope.launch {
             var failures = 0
+            var ticks = 0
             while (isActive) {
                 delay(4000)
                 val base = prefs.lastGoodBase.ifBlank { prefs.baseUrl }
                 if (base.isBlank()) continue
+                ticks++
+
+                // ⓪ 每 ~5 分钟重学一次"异地候选"。
+                //    隧道地址在隧道重启后会变，而手机**只有能连上电脑时**才学得到新地址；
+                //    不主动刷新的话，出门后手里就是一个过期域名 —— 这正是"异地登不上"的老问题。
+                if (ticks % 75 == 0) refreshRemoteHints(base)
 
                 // ① 页面健康：给页面打一个自增计数，长时间不变说明 JS 卡死
                 checkPageAlive()
