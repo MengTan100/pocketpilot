@@ -339,7 +339,19 @@ function createPersistentTunnel(options = {}) {
    *   ② 否则拉起守护进程新建（守护进程自己也会再校验一次，避免两个桥接同时起两条隧道）。
    * 返回 {ok, reused, publicUrl, reason, uptimeSeconds}
    */
-  async function start() {
+  /**
+   * 单飞闸门：桥接的启动流程、/health、5 秒轮询都会调用 start()，
+   * 并发进来时必须共用同一次启动 —— 否则每处都会拉一个守护进程，
+   * 结果就是多条隧道、多个地址（实测出现过 3 个）。
+   */
+  let startInFlight = null;
+  function start() {
+    if (startInFlight) return startInFlight;
+    startInFlight = doStart().finally(() => { startInFlight = null; });
+    return startInFlight;
+  }
+
+  async function doStart() {
     // ① 先看有没有可以复用的
     if (reuse) {
       const rec = record();

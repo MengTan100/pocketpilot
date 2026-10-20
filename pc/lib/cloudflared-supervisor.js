@@ -45,7 +45,36 @@ const {
   target = 'http://127.0.0.1:3080',
   recordFile = path.join(spec.runtimeDir || '.', 'tunnel.json'),
   logFile = path.join(spec.runtimeDir || '.', 'cloudflared.log'),
+  runtimeDir = spec.runtimeDir || '.',
 } = spec;
+
+/**
+ * 守护进程**单实例**锁。
+ *
+ * 真实事故：桥接的 /health、启动流程、5 秒轮询三处都可能调用 start()，
+ * 而"拿到地址前的 1~5 秒"里 record 还没有 publicUrl，于是每次调用都判为
+ * "没隧道"→ 各拉一个守护进程 → 三个 cloudflared 各建一条隧道、各写一个地址，
+ * tunnel.json 被最后写入者覆盖 —— 用户看到的就是"异地地址老是变、时好时坏"。
+ *
+ * 这里用 pidfile 保证同一时刻只有一个守护进程；后启动的直接退出，
+ * 由先启动的那个继续看护（它自己会重试/退避）。
+ */
+const supervisorPidFile = path.join(runtimeDir, 'cloudflared-supervisor.pid');
+(function ensureSingleInstance() {
+  try {
+    const prev = Number(String(fs.readFileSync(supervisorPidFile, 'utf8')).trim());
+    if (Number.isInteger(prev) && prev > 0 && prev !== process.pid) {
+      try { process.kill(prev, 0); } catch { /* 旧的已死 */ }
+      let alivePrev = true;
+      try { process.kill(prev, 0); } catch { alivePrev = false; }
+      if (alivePrev) {
+        appendLog(`已有守护进程 pid=${prev} 在运行，本进程退出（避免两条隧道）`);
+        process.exit(0);
+      }
+    }
+  } catch { /* 没有 pidfile：正常首启 */ }
+  try { fs.writeFileSync(supervisorPidFile, String(process.pid), 'utf8'); } catch { /* 忽略 */ }
+})();
 
 function appendLog(line) {
   const text = `[${new Date().toISOString()}] [supervisor] ${line}\n`;
@@ -239,6 +268,8 @@ function pollUrl() {
 function shutdown(signal) {
   stopping = true;
   appendLog(`收到 ${signal}，停止隧道`);
+  // 释放单实例锁，否则下次启动会以为"还有守护进程在跑"
+  try { fs.unlinkSync(supervisorPidFile); } catch { /* 忽略 */ }
   if (child) {
     try { child.kill(); } catch { /* 忽略 */ }
   }
