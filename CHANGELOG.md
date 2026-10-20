@@ -9,6 +9,20 @@
 
 ## [未发布]
 
+### 修复
+
+- **上游鉴权**（手机端偶发 `dsh web authentication required`）：
+  - 探活改为**带鉴权探测**：`/state` 里 `desktop.status=200` / `authenticated=true` 才表示上游真能用。
+    以前探测不带 Cookie，日志里永远是 401，既分不清"端口不对"和"鉴权没过"，也把真问题淹没了。
+  - 新增 `POST /upstream/desktop-session`：桌面端插件把「`connection.authenticatedUrl()` 给的
+    带 launch token 地址」交给桥接（回环 + bridge token），桥接访问一次换取 DSH 自己下发的
+    `dsh-auth-*` Cookie —— 不再依赖"猜签名密钥"。
+  - 代理层 401 改为**等重新鉴权完成后再重试**（旧实现发起后立刻重试，拿到的还是同一份失效凭据，
+    必然再 401）；WebSocket 升级同样自愈。重试后仍 401 会明确记录 authority，便于排查。
+  - 端口候选里把"已持有会话的端口"排到发现值之前，避免刚换好的会话被端口启发式打断。
+  - 新增回归测试 `pc/tools/test-upstream-auth.js`：用假桌面端覆盖交接、代理、401 自愈、
+    鉴权入口正反用例，共 14 项，不需要真机、不需要真实桌面端。
+
 ### 变更
 
 - 补齐 GitHub 社区标准文件：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、

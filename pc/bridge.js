@@ -644,10 +644,55 @@ const desktop = {
   cookieReady: false,
   lastError: null,
   checkedAt: 0,
+  // 桌面端自己下发的会话（权威鉴权）：插件把带 launch token 的地址交过来，
+  // 桥接访问它换取 Set-Cookie。自签 Cookie 是"猜密钥"，这里才是"官方发牌"。
+  sessionUrl: '',
+  sessionCookie: null,   // { authority, header, at }
+  authSource: 'none',    // 'session' | 'mint' | 'none' —— 排查时一眼看出用的哪条路
 };
 
 /** 探测桌面端实例；结果缓存 5 秒，避免频繁打扰。 */
+/**
+ * 发现桌面端 DSH 的实际监听端口。
+ *
+ * 为什么不能只读配置：桌面端端口**每次重启都会变**（实测 19387 → 53274 → 53760），
+ * 写死或读配置都追不上，结果是 desktop.alive 永远 false、手机端报"上游不可用"。
+ * 这里直接从系统里查：哪个进程是 DeepSeek Harness，它就监听在哪个端口 —— 事实来源。
+ */
+let desktopPortCache = { at: 0, port: 0 };
+function discoverDesktopPort() {
+  if (Date.now() - desktopPortCache.at < 30000) return desktopPortCache.port;
+  let port = 0;
+  try {
+    // tasklist 拿 PID（按镜像名），netstat 拿监听端口；两者都在系统里，不引入新依赖。
+    const tasks = execFileSync("tasklist", ["/FO", "CSV", "/NH"], { windowsHide: true, timeout: 8000, encoding: "utf8" });
+    const pids = new Set();
+    for (const line of tasks.split(/\r?\n/)) {
+      if (!/DeepSeek/i.test(line)) continue;
+      const cols = line.split(",");
+      const pid = Number(String(cols[1] || "").replace(/"/g, ""));
+      if (pid > 0) pids.add(pid);
+    }
+    if (pids.size === 0) { desktopPortCache = { at: Date.now(), port: 0 }; return 0; }
+    const netstat = execFileSync("netstat", ["-ano", "-p", "TCP"], { windowsHide: true, timeout: 8000, encoding: "utf8" });
+    for (const line of netstat.split(/\r?\n/)) {
+      const m = line.match(/LISTENING\s+(\d+)\s*$/);
+      if (!m) continue;
+      if (!pids.has(Number(m[1]))) continue;
+      const addr = line.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):(\d+)\s/);
+      if (!addr) continue;
+      const candidate = Number(addr[1]);
+      if (candidate >= 1024) { port = candidate; break; }
+    }
+  } catch (error) {
+    log("桌面端端口发现失败：" + (error && error.message ? error.message : error));
+  }
+  desktopPortCache = { at: Date.now(), port };
+  return port;
+}
+
 async function refreshDesktopState(force) {
+  log('[探活] refreshDesktopState 进入 force=' + force + ' preferDesktop=' + config.preferDesktop);
   if (!config.preferDesktop) {
     desktop.alive = false;
     desktop.lastError = 'preferDesktop 已关闭';
@@ -655,16 +700,56 @@ async function refreshDesktopState(force) {
   }
   if (!force && Date.now() - desktop.checkedAt < 5000) return desktop;
   try {
-    const probe = await probeInstance(config.desktopHost, config.desktopPort);
+    // 桌面端端口是**会变的**（DSH 升级后实测从 19387 换到了 53760）。
+    // 只认配置里那个死端口 → desktop.alive 永远 false → 手机端"上游不可用"。
+    // 所以：先试配置值，再依次试已知候选端口，谁活着就用谁并记住。
+    // 顺序：系统里发现的真实端口 → 配置值 → 历史已知值
+    const found = discoverDesktopPort();
+    // 候选顺序：**已持有会话的端口**优先 —— 我们已经用桌面端自己发的 Cookie 验证过它，
+    // 这比 tasklist/netstat 猜出来的端口更权威；会话端口不通（桌面端重启换了端口）再退回去发现。
+    const sessionPort = desktop.sessionCookie
+      ? Number(String(desktop.sessionCookie.authority || '').split(':').pop())
+      : 0;
+    const candidates = [sessionPort, found, config.desktopPort, 19387, 53760]
+      .filter((v, i, a) => v && a.indexOf(v) === i);
+    let probe = { alive: false, status: 0, requiresAuth: false };
+    for (const port of candidates) {
+      // 探活也带鉴权：否则上游永远回 401，日志里全是假的"401"，
+      // 既看不出上游到底能不能用，也分不清"端口没对上"和"鉴权没通过"。
+      const authority = `${config.desktopHost}:${port}`;
+      let probeCookie = null;
+      const session = desktop.sessionCookie;
+      if (session && session.authority === authority && Date.now() - session.at < 10 * 60 * 1000) {
+        probeCookie = session.header;
+      } else {
+        try {
+          const cookie = mintCookie({ homeDir: config.dshHome, authority });
+          probeCookie = `${cookie.name}=${cookie.value}`;
+        } catch { /* 密钥读不出来时退化成无鉴权探测（仍能判断端口是否在监听） */ }
+      }
+      probe = await probeInstance(config.desktopHost, port, 800, probeCookie);
+      if (probe.alive) {
+        if (port !== config.desktopPort) {
+          log(`桌面端实际在 ${port}（配置是 ${config.desktopPort}），已自动切换`);
+          config.preferDesktop = true;   // 找到真实桌面端就一定要用它（否则仍会回落到桥接实例）
+          config.desktopPort = port;
+        }
+        break;
+      }
+    }
     desktop.alive = probe.alive;
     desktop.status = probe.status;
     desktop.requiresAuth = probe.requiresAuth;
+    // authenticated：带了 Cookie 探活仍回 401 ⇒ 鉴权真的没通过（不是"需要登录"而已）。
+    desktop.authOk = probe.alive && (probe.status !== 401);
     desktop.lastError = null;
   } catch (error) {
     desktop.alive = false;
     desktop.lastError = error.message;
   }
+  desktop.port = config.desktopPort;   // 之前只改了 config，desktop.port 一直显示旧值，误导排查
   desktop.checkedAt = Date.now();
+  log('[探活] refreshDesktopState 完成 alive=' + desktop.alive + ' port=' + desktop.port + ' status=' + desktop.status + ' 发现=' + discoverDesktopPort());
   return desktop;
 }
 
@@ -709,6 +794,99 @@ function desktopCookie() {
 }
 
 /**
+ * 只接受回环 http 地址：桌面端会话地址里带 launch token，绝不能把桥接变成 SSRF 跳板。
+ * @returns {{url:URL, authority:string, host:string, port:number}|null}
+ */
+function parseLoopbackSessionUrl(text) {
+  let url;
+  try {
+    url = new URL(String(text || ''));
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:') return null;
+  const host = url.hostname;
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1' && host !== '[::1]') return null;
+  const port = Number(url.port);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return null;
+  return { url, host, port, authority: `${host}:${port}` };
+}
+
+/** 发一个只用于"换 Cookie"的 GET：Host 必须显式写，否则桌面端的 authority 校验通不过。 */
+function fetchLoopbackSession({ host, port, path: target, authority }) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host,
+      port,
+      method: 'GET',
+      path: target,
+      headers: { host: authority, accept: 'text/html' },
+      timeout: 5000,
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers }));
+    });
+    req.on('timeout', () => req.destroy(new Error('换取会话超时')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+/**
+ * 用桌面端自己下发的会话 Cookie 鉴权（权威路径）。
+ *
+ * 为什么需要它：自签 Cookie 依赖 `~/.dsh/.credentials.yaml` 里的浏览器会话密钥，
+ * 而桌面端进程内的密钥与磁盘**并不总是同步**（实测同一份凭据、同一 authority，
+ * 桌面端回 401，过一会儿又能通过）。真正可靠的做法是让 DSH 自己发牌：
+ * 桌面端宿主里的 phone-bridge 插件能拿到 `connection.authenticatedUrl()` ——
+ * 那个带 launch token 的地址访问一次就回 303 + Set-Cookie，桥接拿它换 Cookie 即可。
+ *
+ * @param {string} urlText 形如 http://127.0.0.1:<port>/?token=<launchToken>
+ * @param {{force?:boolean}} [options] force=true 时忽略缓存，强制重换（401 自愈用）
+ */
+async function exchangeDesktopSession(urlText, options = {}) {
+  const parsed = parseLoopbackSessionUrl(urlText);
+  if (!parsed) return { ok: false, error: '会话地址必须是回环 http://127.0.0.1:<port>/?token=...' };
+
+  const cached = desktop.sessionCookie;
+  if (!options.force && cached && cached.authority === parsed.authority
+      && Date.now() - cached.at < 10 * 60 * 1000) {
+    return { ok: true, authority: parsed.authority, host: parsed.host, port: parsed.port, cached: true };
+  }
+
+  let res;
+  try {
+    res = await fetchLoopbackSession({
+      host: parsed.host,
+      port: parsed.port,
+      authority: parsed.authority,
+      path: `${parsed.url.pathname}${parsed.url.search}`,
+    });
+  } catch (error) {
+    return { ok: false, error: `连接桌面端失败：${error.message}`, authority: parsed.authority };
+  }
+
+  const raw = typeof res.headers.getSetCookie === 'function'
+    ? res.headers.getSetCookie()
+    : [res.headers['set-cookie']].flat().filter(Boolean);
+  const pairs = raw
+    .map((entry) => String(entry).split(';')[0].trim())
+    .filter((entry) => entry.includes('='));
+  if (pairs.length === 0) {
+    return { ok: false, error: `桌面端没有下发会话 Cookie（HTTP ${res.status}）`, authority: parsed.authority };
+  }
+
+  desktop.sessionUrl = parsed.url.href;
+  desktop.sessionCookie = { authority: parsed.authority, header: pairs.join('; '), at: Date.now() };
+  // 插件报上来的端口就是事实来源：比 tasklist/netstat 猜出来的更准。
+  config.desktopHost = parsed.host;
+  config.desktopPort = parsed.port;
+  log(`已用桌面端 token 换取会话 Cookie（${parsed.authority}，${pairs.length} 项）`);
+  return { ok: true, authority: parsed.authority, host: parsed.host, port: parsed.port, cached: false };
+}
+
+/**
  * 手机面板应该加载的入口地址。
  *
  * 统一走 Bridge 反代（USB 与局域网同一套入口，并顺带补静态资源缓存头）。
@@ -731,12 +909,27 @@ function phoneEntryUrl() {
  */
 function getProxyUpstream() {
   if (config.preferDesktop && desktop.alive) {
-    try {
-      const cookie = desktopCookie();
+    const authority = `${config.desktopHost}:${config.desktopPort}`;
+    // ① 首选"桌面端自己发的牌"：插件交来 token 地址后换到的 Cookie。
+    //    10 分钟内的缓存直接复用；过期就退回②，下一次 401 会再换一次。
+    const session = desktop.sessionCookie;
+    if (session && session.authority === authority && Date.now() - session.at < 10 * 60 * 1000) {
+      desktop.authSource = 'session';
       return {
         host: config.desktopHost,
         port: config.desktopPort,
-        authority: `${config.desktopHost}:${config.desktopPort}`,
+        authority,
+        cookie: session.header,
+      };
+    }
+    // ② 退而求其次：用凭据里的签名密钥自签（不依赖桌面端配合，先能用）。
+    try {
+      const cookie = desktopCookie();
+      desktop.authSource = 'mint';
+      return {
+        host: config.desktopHost,
+        port: config.desktopPort,
+        authority,
         cookie: `${cookie.name}=${cookie.value}`,
       };
     } catch (error) {
@@ -744,6 +937,7 @@ function getProxyUpstream() {
     }
   }
   if (dsh.running && dsh.cookie) {
+    desktop.authSource = 'bridge';
     return {
       host: config.dshHost,
       port: config.dshPort,
@@ -751,20 +945,34 @@ function getProxyUpstream() {
       cookie: dsh.cookie,
     };
   }
+  desktop.authSource = 'none';
   return null;
 }
 
 /**
- * 让上游重新签名会话 cookie。
+ * 让上游重新鉴权（401 时调用，**必须是异步的**）。
  *
- * 用在代理层检测到 401 时：DSH 桌面端重启后签名密钥可能变化，
- * 桥接手里的 cookie 随之失效。
- * 注意 desktopCookie() 本身就是"每次调用现签"（mintCookie 读凭据里的密钥），
- * 所以重试时自然会拿到新 cookie；这里只需让桌面端存活状态重新探测一次，
- * 保证 getProxyUpstream() 选到正确的上游。
+ * 踩过的坑：旧实现只是 `refreshDesktopState(false).catch(...)` —— 既没有 await，
+ * 又受 5 秒探活缓存影响。代理那边立刻 `getUpstream()` 重试，拿到的还是同一份
+ * 失效凭据，于是"重试"注定再 401，手机端看到的就是 `dsh web authentication required`。
+ *
+ * 现在的顺序：
+ *   ① 有会话地址 → 强制重换一次 Cookie（桌面端自己发牌，最可靠）；
+ *   ② 清掉探活缓存并强制重探（端口可能已经变了）；
+ *   ③ 都失败时返回，让代理层把 401 透传出去（不再假装重试）。
  */
-function refreshProxyUpstream() {
-  refreshDesktopState(false).catch(() => {});
+async function refreshProxyUpstream() {
+  if (desktop.sessionUrl) {
+    try {
+      const result = await exchangeDesktopSession(desktop.sessionUrl, { force: true });
+      if (!result.ok) log(`上游会话重换失败：${result.error}`);
+    } catch (error) {
+      log(`上游会话重换异常：${error.message}`);
+    }
+  }
+  desktop.checkedAt = 0;              // 不吃 5 秒缓存：端口/进程可能刚变过
+  desktopPortCache = { at: 0, port: 0 };
+  await refreshDesktopState(true).catch(() => {});
 }
 
 const proxy = createDshProxy({
@@ -867,6 +1075,11 @@ function bridgeRuntime() {
       host: config.desktopHost,
       port: config.desktopPort,
       status: desktop.status,
+      // authenticated=false 且 alive=true ⇒ 探活带着 Cookie 仍被 401（鉴权没通过，不是"没登录"）
+      authenticated: desktop.authOk === true,
+      // 当前用的哪条鉴权：session=桌面端自己发牌 / mint=凭据密钥自签 / bridge=桥接实例
+      authSource: desktop.authSource,
+      hasDesktopSession: Boolean(desktop.sessionCookie),
       entryUrl: phoneEntryUrl(),
       lastError: desktop.lastError,
     },
@@ -1617,6 +1830,24 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      case '/upstream/desktop-session': {
+        // 桌面端插件（跑在 DSH 宿主进程里）把 `connection.authenticatedUrl()` 交过来 ——
+        // 这是**权威**的上游鉴权来源：带 launch token 的地址访问一次就回 303 + Set-Cookie。
+        // 走通用鉴权（需要 bridge token），失败也不影响"自签 Cookie"的兜底路径。
+        const sessionUrl = String(body.url || '');
+        // force=true：插件刚发现 DSH 宿主重启/密钥轮换时可以要求立刻重换，不吃 10 分钟缓存。
+        const result = await exchangeDesktopSession(sessionUrl, { force: body.force === true });
+        if (result.ok) {
+          desktop.alive = true;
+          desktop.lastError = null;
+          desktop.checkedAt = 0;
+        } else {
+          log(`上游会话地址不可用：${result.error}`);
+        }
+        sendJson(res, result.ok ? 200 : 502, result);
+        return;
+      }
+
       case '/handshake':
       case '/state': {
         // ⚠️ 不要在这里同步等待：原实现 await 了 refreshDesktopState + dsh.start()，
@@ -1803,6 +2034,24 @@ server.on('upgrade', (req, socket, head) => {
 
 async function main() {
   log(`PocketPilot v${BRIDGE_VERSION} 启动（模式：${config.mode}）· ${ORIGIN_MARK}`);
+
+  // 上游探活必须**主动周期性**做，而不是等某个请求顺带触发。
+  // 踩过的坑：桌面端端口会变（19387 → 53274 → 53760），若只在请求路径里探，
+  // 一旦那条分支没走到，desktop.alive 就永远 false → 手机端"上游不可用"。
+  const tickUpstream = () => {
+    refreshDesktopState(true)
+      .then(() => {
+        if (desktop.alive) {
+          log(`上游就绪：桌面端 ${config.desktopHost}:${config.desktopPort}（status=${desktop.status}）`);
+          clearIntervalProbe();
+        }
+      })
+      .catch(() => {});
+  };
+  const probeTimer = setInterval(tickUpstream, 10000);
+  probeTimer.unref?.();
+  function clearIntervalProbe() { clearInterval(probeTimer); }
+  setTimeout(tickUpstream, 1500).unref?.();
   log(`dsh CLI: ${config.dshCli}`);
   log(`adb    : ${config.adbPath}`);
   log(`异地通道 provider 顺序：${(config.remoteProviders || []).join(' → ') || '(无)'}`

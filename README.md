@@ -118,35 +118,54 @@ App 主体是一个**占满屏幕的 WebView**，直接加载 PC 端 DSH 的真�
 共享、`session/list` 能列出全部会话，但**不知道"你当前在哪个会话"，也没有实时流** ——
 打开就是一张新会话页，看不到正在跑的对话。`bridge` profile 只保留 `dsh-base` + `dsh-web-app`。
 
-真正持有"当前会话 + 正在跑的任务 + 待审批弹窗"的是**桌面端实例**（`:19387`，`desktop` profile）。
+真正持有"当前会话 + 正在跑的任务 + 待审批弹窗"的是**桌面端实例**。它的端口**每次启动都会变**
+（实测 19387 → 53274 → 53760）：桥接会从系统进程里发现它，而插件上报的端口更权威。
+
 它的 Web 入口用进程内随机 launch token 鉴权，token 不落盘、重启即变，外部拿不到。
-但它的 **Cookie 签名密钥是持久化的**：
+桥接为此准备了两条路，**优先第一条**：
+
+**① 权威路径：让 DSH 自己发牌**
+
+桌面端宿主里的 phone-bridge 插件能拿到 `connection.authenticatedUrl()` —— 带 launch token 的地址。
+插件把它交给桥接（仅回环 + 桥接令牌，`POST /upstream/desktop-session`），
+桥接访问一次即得到 `303 + Set-Cookie`，随后用这条 `dsh-auth-*` Cookie 代理。
+launch token 是**进程级**的：即使 DSH 内部轮换了签名密钥，这条会话依然有效。
+这正是 `dsh web authentication required` 的正解 —— 不猜密钥。
+
+**② 兜底路径：自签 Cookie**（`pc/lib/desktop-auth.js`）
+
+签名密钥持久化在凭据里：
 
 ```
 ~/.dsh/.credentials.yaml → records["client-connection/browser-session"]
                            { kind: grant, payload: { version: 1, secret: <32 字节> } }
 ```
 
-于是桥接按同样算法自签一个合法 Cookie 即可进入桌面端（`pc/lib/desktop-auth.js`）：
+于是桥接按同样算法自签一个合法 Cookie：
 
 ```
-Cookie 名 = "dsh-auth-" + base64url(sha256(authority))          // authority = 127.0.0.1:19387
+Cookie 名 = "dsh-auth-" + base64url(sha256(authority))          // authority = 127.0.0.1:<端口>
 Cookie 值 = "v1." + base64url(payload) + "." + base64url(HMAC-SHA256(secret, body))
 payload   = { version: 1, authority, issuedAt, expiresAt }
 ```
 
+⚠️ 实测桌面端**进程内密钥与磁盘文件短时会不一致**：同一个 authority、同一份凭据，
+上游偶发回 401，过一会儿又正常。所以自签只作兜底，不能当唯一依赖 —— 这也正是①存在的理由。
+
 落地链路：
 
 ```
-手机 WebView → http://127.0.0.1:3080/desktop            (免鉴权，仅 USB 模式)
-             ← 302 + Set-Cookie(dsh-auth-…) + Location: http://127.0.0.1:19387/
-             → 手机 127.0.0.1:19387 经 adb reverse 直达 PC 的桌面端实例
+手机 WebView → http://127.0.0.1:3080/dsh/      （局域网模式需 ?k=<bridgeToken>）
+             → 桥接反代到桌面端（Host / Origin / Cookie 由桥接改写）
              → 看到当前对话、正在跑的任务，并可直接发消息
 ```
 
-- `adb reverse` 因此额外维护 `tcp:19387`；
-- 桌面端未运行（或局域网模式）时，`/desktop` 自动回退到桥接实例，面板不会白屏；
-- 自签密钥只在本机读取，不出网、不写日志明文。
+- 上游 401 会**重新鉴权后重试一次**（HTTP 与 WebSocket 都覆盖），不再把
+  `dsh web authentication required` 原样甩给手机；
+- 探活也带鉴权：`/state` 里 `desktop.status=200 / authenticated=true` 才代表上游真能用
+  （以前不带 Cookie，永远显示 401，分不清"端口不对"和"鉴权没过"）；
+- 桌面端未运行（或局域网模式）时自动回退到桥接实例，面板不会白屏；
+- 会话密钥只在本机读取，不出网、不写日志明文。
 
 USB 模式下**无需配置任何环境变量**：App 会自动向 `http://127.0.0.1:3080/handshake`
 取得桥接令牌并缓存；插件侧也用它取配对信息。

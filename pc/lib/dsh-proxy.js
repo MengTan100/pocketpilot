@@ -119,19 +119,31 @@ function createDshProxy(options) {
             headers,
         }, (proxyRes) => {
             // 认证失效自愈：DSH 桌面端重启 / 轮换签名密钥后，手里的 cookie 会失效（上游回 401）。
-            // 重新签一次并**带原请求体重试一次**，而不是把 401 透传给手机 ——
+            // 重新鉴权并**带原请求体重试一次**，而不是把 401 透传给手机 ——
             // 手机端看到 "dsh web authentication required" 只会干等，表现就是"App 打不开"。
             if (proxyRes.statusCode === 401
                 && attempt === 0
                 && typeof options.refreshUpstream === 'function') {
-                log(`上游 401（会话 cookie 可能已失效），重新签名后重试: ${target}`);
+                log(`上游 401（鉴权失效：${upstream.authority}），重新鉴权后重试: ${target}`);
                 proxyRes.resume();               // 丢弃这次响应体
-                options.refreshUpstream();
-                const next = getUpstream();
-                if (next) {
-                    relay(req, res, next, sourceHeaders, target, body, attempt + 1);
-                    return;
-                }
+                // ⚠️ 必须**等**重新鉴权完成再重试。旧实现发起后立刻重试，
+                // 拿到的还是同一份失效凭据（5 秒探活缓存 + 同步取值），重试必然再 401。
+                Promise.resolve()
+                    .then(() => options.refreshUpstream())
+                    .catch((error) => log(`上游重新鉴权失败: ${error && error.message ? error.message : error}`))
+                    .then(() => {
+                        const next = getUpstream();
+                        if (!next) {
+                            if (!res.headersSent) res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
+                            res.end('DSH 上游不可用\n');
+                            return;
+                        }
+                        relay(req, res, next, sourceHeaders, target, body, attempt + 1);
+                    });
+                return;
+            }
+            if (proxyRes.statusCode === 401) {
+                log(`上游鉴权失败（重新鉴权后仍 401）：${upstream.authority} ${target}`);
             }
 
             const outHeaders = { ...proxyRes.headers };
@@ -140,7 +152,7 @@ function createDshProxy(options) {
             if (isImmutableAsset(target.split('?')[0]) && !outHeaders['cache-control']) {
                 outHeaders['cache-control'] = 'public, max-age=31536000, immutable';
             }
-            res.writeHead(proxyRes.statusCode || 502, outHeaders);
+            // （此处曾有 res.writeHead：它与下面分支里的 writeHead 重复，导致 ERR_HTTP_HEADERS_SENT，响应挂死）
             const ctype = String(outHeaders["content-type"] || "");
 
             // ⚠️ 必须改写 <base>：DSH 首页现在输出 <base href="/">，而手机是经 /dsh/ 前缀访问的。
@@ -245,8 +257,18 @@ function createDshProxy(options) {
         });
     }
 
-    /** WebSocket（HTTP Upgrade）转发：用原始 socket 双向 pipe。 */
-    function handleUpgrade(req, socket, head) {
+    /**
+     * WebSocket（HTTP Upgrade）转发：用原始 socket 双向 pipe。
+     *
+     * 鉴权也要自愈：上游对 Upgrade 同样可能回 401（Cookie 失效/密钥轮换）。
+     * 旧实现连上就直接 pipe，401 会原样交给手机浏览器 —— 页面能打开、但实时流
+     * 永远连不上，用户看到的是"对话不同步、要刷新"。
+     * 现在先看上游首包：401 就重新鉴权并重试一次，其余情况才转成双向管道。
+     *
+     * @param {number} [attempt] 已经重试过几次（0 = 首次）
+     */
+    function handleUpgrade(req, socket, head, attempt) {
+        const round = attempt || 0;
         const upstream = getUpstream();
         if (!upstream) {
             socket.destroy();
@@ -267,11 +289,10 @@ function createDshProxy(options) {
         if (upstream.cookie) lines.push(`Cookie: ${upstream.cookie}`);
 
         const startedAt = Date.now();
+        let retrying = false;
         const upstreamSocket = net.connect(upstream.port, upstream.host, () => {
             upstreamSocket.write(lines.join('\r\n') + '\r\n\r\n');
             if (head && head.length) upstreamSocket.write(head);
-            upstreamSocket.pipe(socket);
-            socket.pipe(upstreamSocket);
         });
 
         // 移动端保活：USB/无线链路可能"静默断掉"（对端消失但没有 FIN）。
@@ -285,23 +306,50 @@ function createDshProxy(options) {
             upstreamSocket.setNoDelay(true);
         } catch { /* 部分环境下不支持，忽略 */ }
 
-        // 记录上游握手结果（101 才算成功），便于定位 WS 问题
-        upstreamSocket.once('data', (chunk) => {
+        // 先只收首包：判断 401 后再决定"重试"还是"开始双向管道"。
+        let handshakeDone = false;
+        const onFirstChunk = (chunk) => {
+            handshakeDone = true;
+            upstreamSocket.removeListener('data', onFirstChunk);
+            upstreamSocket.pause();
+
             const firstLine = chunk.toString('utf8', 0, Math.min(96, chunk.length)).split('\r\n')[0];
+            const status = Number((firstLine.match(/^HTTP\/1\.[01]\s+(\d{3})/) || [])[1] || 0);
+
+            if (status === 401 && round === 0 && typeof options.refreshUpstream === 'function') {
+                log(`上游 WS 401（鉴权失效：${upstream.authority}），重新鉴权后重试: ${target}`);
+                retrying = true;                  // 别让 close/error 把手机端也一起关掉
+                upstreamSocket.destroy();
+                Promise.resolve()
+                    .then(() => options.refreshUpstream())
+                    .catch((error) => log(`上游重新鉴权失败: ${error && error.message ? error.message : error}`))
+                    .then(() => {
+                        if (socket.destroyed) return;
+                        handleUpgrade(req, socket, head, round + 1);
+                    });
+                return;
+            }
+
             log(`proxy WS ${target} <- ${firstLine}`);
-        });
+            socket.write(chunk);                  // 握手响应原样回给客户端
+            upstreamSocket.pipe(socket);
+            socket.pipe(upstreamSocket);
+            upstreamSocket.resume();
+        };
+        upstreamSocket.on('data', onFirstChunk);
 
         const cleanup = () => {
             upstreamSocket.destroy();
             socket.destroy();
         };
-        upstreamSocket.on('error', cleanup);
-        socket.on('error', cleanup);
+        upstreamSocket.on('error', () => { if (!retrying) cleanup(); });
+        socket.on('error', () => { if (!retrying) cleanup(); });
         upstreamSocket.on('close', () => {
+            if (retrying) return;                 // 正在换新连接，客户端要留着
             log(`proxy WS ${target} 关闭（持续 ${Math.round((Date.now() - startedAt) / 1000)}s）`);
             socket.destroy();
         });
-        socket.on('close', () => upstreamSocket.destroy());
+        socket.on('close', () => { if (!retrying) upstreamSocket.destroy(); });
     }
 
     return { handleRequest, handleUpgrade, PREFIX };

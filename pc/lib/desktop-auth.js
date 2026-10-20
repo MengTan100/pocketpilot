@@ -127,18 +127,35 @@ function mintCookie({ homeDir, authority, maxAgeDays = DEFAULT_MAX_AGE_DAYS }) {
   };
 }
 
-/** 探测某个实例是否在监听。 */
-function probeInstance(host, port, timeoutMs = 800) {
+/**
+ * 探测某个实例是否在监听（可选带鉴权 Cookie）。
+ *
+ * 带上 Cookie 才有意义：不带时 DSH 一定回 401（"authentication required"），
+ * 探活结果永远显示 401，既看不出上游能不能用，也分不清"端口不对"和"鉴权没过"。
+ *
+ * @param {string} host
+ * @param {number} port
+ * @param {number} [timeoutMs]
+ * @param {string|null} [cookieHeader] 形如 "dsh-auth-xxx=v1...."
+ */
+function probeInstance(host, port, timeoutMs = 800, cookieHeader = null) {
   return new Promise((resolve) => {
+    const headers = { Host: `${host}:${port}` };
+    if (cookieHeader) headers.Cookie = cookieHeader;
     const req = http.request(
-      { host, port, path: '/', method: 'GET', timeout: timeoutMs, headers: { Host: `${host}:${port}` } },
+      { host, port, path: '/', method: 'GET', timeout: timeoutMs, headers },
       (res) => {
         res.resume();
-        resolve({ alive: true, status: res.statusCode, requiresAuth: res.statusCode === 401 });
+        resolve({
+          alive: true,
+          status: res.statusCode,
+          requiresAuth: res.statusCode === 401,
+          authenticated: res.statusCode === 200,
+        });
       },
     );
-    req.on('timeout', () => { req.destroy(); resolve({ alive: false, status: 0, requiresAuth: false }); });
-    req.on('error', () => resolve({ alive: false, status: 0, requiresAuth: false }));
+    req.on('timeout', () => { req.destroy(); resolve({ alive: false, status: 0, requiresAuth: false, authenticated: false }); });
+    req.on('error', () => resolve({ alive: false, status: 0, requiresAuth: false, authenticated: false }));
     req.end();
   });
 }

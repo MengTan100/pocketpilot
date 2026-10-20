@@ -147,6 +147,76 @@ export async function ensureBridgeRunning() {
   return { ok: false, action: 'failed', script, error: 'not ready in 12s' };
 }
 
+/** 桥接用的鉴权头（与 bridge.js 的 authorize() 约定一致）。 */
+const BRIDGE_TOKEN_HEADER = 'x-bridge-token';
+
+/**
+ * 读取桥接配置（`bridge.config.json` 就在 bridge.js 旁边）：端口 + 桥接令牌。
+ * 读不到令牌就直接放弃 —— /upstream/desktop-session 走桥接自身的鉴权，不能匿名。
+ */
+function readBridgeConfig() {
+  const candidates = [];
+  const script = resolveBridgeScript();
+  if (script) candidates.push(path.join(path.dirname(script), 'bridge.config.json'));
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  if (home) candidates.push(path.join(home, '.dsh', 'phone-bridge.config.json'));
+  for (const file of candidates) {
+    try {
+      if (!existsSync(file)) continue;
+      const cfg = JSON.parse(readFileSync(file, 'utf8'));
+      const token = typeof cfg.bridgeToken === 'string' ? cfg.bridgeToken : '';
+      if (!token) continue;
+      return { port: Number(cfg.bridgePort) || BRIDGE_PORT, token };
+    } catch { /* 试下一个 */ }
+  }
+  return { port: BRIDGE_PORT, token: '' };
+}
+
+/**
+ * 把「带 launch token 的会话地址」交给桥接 —— 上游鉴权的**权威**来源。
+ *
+ * 为什么需要：桥接反向代理桌面端时，要么自签 Cookie（依赖 ~/.dsh 里持久化的
+ * 会话密钥），要么让 DSH 自己发牌。实测前者并不可靠：桌面端进程内的密钥与磁盘
+ * 偶尔不一致，同一个 authority、同一份凭据，桌面端回 401，手机端就看到
+ * `dsh web authentication required`。我们跑在 DSH 宿主进程里，
+ * `connection.authenticatedUrl()` 拿到的地址访问一次就回 303 + Set-Cookie，
+ * 桥接拿它换 Cookie 即可 —— 不需要猜密钥，也不需要用户的 launch token。
+ *
+ * 安全性：URL 里含 launch token，只在**回环**上传给桥接，绝不打印到日志。
+ *
+ * @returns {Promise<{ok:boolean, port?:number, reason?:string}>}
+ */
+export async function publishDesktopSession(ctx) {
+  const get = (name) => (typeof ctx.get === 'function' ? ctx.get(name) : undefined);
+  const webServer = get('webServer');
+  const connection = get('connection');
+  if (!webServer || !connection || typeof connection.authenticatedUrl !== 'function') {
+    return { ok: false, reason: '服务未就绪（webServer / connection）' };
+  }
+  const port = Number(webServer.port);
+  if (!Number.isInteger(port) || port <= 0) return { ok: false, reason: 'webServer 端口未知' };
+
+  const protocol = webServer.protocol === 'https:' ? 'https:' : 'http:';
+  const url = connection.authenticatedUrl(`${protocol}//127.0.0.1:${port}`);
+  const cfg = readBridgeConfig();
+  if (!cfg.token) return { ok: false, reason: '读不到桥接令牌（bridge.config.json）' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`http://127.0.0.1:${cfg.port}/upstream/desktop-session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', [BRIDGE_TOKEN_HEADER]: cfg.token },
+      body: JSON.stringify({ url }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, reason: `桥接返回 HTTP ${res.status}` };
+    return { ok: true, port };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * 插件主体：只做"确保桥接在跑"这一件事，且**永不抛出**。
  * 前端（lib/client.js）照旧通过同源 iframe 显示二维码，不需要任何 RPC。
@@ -154,12 +224,30 @@ export async function ensureBridgeRunning() {
 export function apply(ctx) {
   // 用 ctx.effect 包住：插件卸载/热更新时清理我们自己起的定时器，避免重复拉进程。
   try {
-    const run = () => { ensureBridgeRunning().catch(() => {}); };
+    let announced = false;
+    const run = () => {
+      ensureBridgeRunning()
+        .then(async (result) => {
+          if (!result || !result.ok) return;
+          const published = await publishDesktopSession(ctx)
+            .catch((error) => ({ ok: false, reason: error && error.message ? error.message : String(error) }));
+          if (published.ok) {
+            if (!announced) {
+              console.info(`[phone-bridge] 已交出桌面端会话（上游鉴权走 DSH 自己的 launch token，port=${published.port}）`);
+            }
+            announced = true;
+          } else if (!announced) {
+            console.warn(`[phone-bridge] 暂未交出桌面端会话：${published.reason}（稍后自动重试）`);
+          }
+        })
+        .catch(() => {});
+    };
     run();
     // DSH 可能先于网络栈就绪；再补一次延迟尝试（幂等：已在跑就 reuse）。
     const timer = setTimeout(run, 8000);
     // 定时兜底：桥接可能被用户关掉、崩掉，或比 DSH 晚启动。
     // 每 60 秒确认一次（已在跑就 reuse，不会重复拉起），保证"插件在 = 桥接在"。
+    // 顺便把会话地址再交一次：DSH 宿主重启后 launch token 会变，桥接需要新的。
     const keepAlive = setInterval(run, 60000);
     if (typeof keepAlive.unref === "function") keepAlive.unref();
     if (typeof timer.unref === 'function') timer.unref();
