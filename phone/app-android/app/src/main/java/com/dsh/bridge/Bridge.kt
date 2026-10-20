@@ -360,6 +360,43 @@ object Bridge {
         return best
     }
 
+    /**
+     * GET /version —— 问电脑端"有没有新版本"。
+     *
+     * 判断逻辑只在电脑端（桥接 lib/version-check.js），手机只负责显示与跳转：
+     * 手机上直连 GitHub 在国内经常不通，而电脑端通常更稳（还能走镜像通道）。
+     */
+    fun checkVersion(base: String, timeoutMs: Int = 8000): VersionInfo {
+        return try {
+            val conn = (URL("${normalize(base)}/version").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = timeoutMs
+                readTimeout = timeoutMs
+                setRequestProperty("Accept", "application/json")
+            }
+            val code = conn.responseCode
+            val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() } ?: ""
+            conn.disconnect()
+            if (code !in 200..299) return VersionInfo(ok = false, error = "版本检查失败 HTTP $code")
+
+            val json = JSONObject(text)
+            VersionInfo(
+                ok = json.optBoolean("ok", false),
+                current = json.optString("plugin"),
+                latest = json.optString("latest"),
+                hasUpdate = json.optBoolean("hasUpdate", false),
+                apkUrl = json.optString("apkUrl"),
+                pluginUrl = json.optString("pluginUrl"),
+                notesUrl = json.optString("notesUrl"),
+                reachable = json.optBoolean("reachable", false),
+                error = json.optString("error"),
+            )
+        } catch (e: Exception) {
+            VersionInfo(ok = false, error = e.message ?: "版本检查异常")
+        }
+    }
+
     /** GET /handshake —— 局域网/远程模式需要 X-Bridge-Token。 */
     fun handshake(base: String, token: String?, timeoutMs: Int = 8000): Handshake {
         return try {
@@ -450,3 +487,21 @@ object Bridge {
         return if (needToken) "$b/dsh/?k=$bridgeToken" else "$b/dsh/"
     }
 }
+
+/**
+ * `/version` 的返回：电脑端判断"有没有新版"，手机只显示与跳转。
+ *
+ * 为什么要多一层 current/latest 而不是直接比 App 版本：
+ * 电脑端插件与手机 App 是配套发布的，版本号一致；升级入口也就自然统一。
+ */
+data class VersionInfo(
+    val ok: Boolean = false,
+    val current: String = "",
+    val latest: String = "",
+    val hasUpdate: Boolean = false,
+    val apkUrl: String = "",
+    val pluginUrl: String = "",
+    val notesUrl: String = "",
+    val reachable: Boolean = false,
+    val error: String = "",
+)

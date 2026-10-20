@@ -7,6 +7,31 @@
 发布包见 [Releases](https://github.com/MengTan100/pocketpilot/releases)，
 图形化发布页见 <https://mengtan100.github.io/pocketpilot/>。
 
+## [0.5.1] - 2026-10-20
+
+本次为「可更新」版本：插件与 App 各自带上升级入口，并把版本号校准到与发布一致，
+以后的版本才能真正被检测到并提示升级。
+
+### 新增
+
+- **插件面板的升级入口**：显示「插件 vX · 已是最新 / 有新版本 vY」；
+  有新版本时直接给出「复制升级命令」（`dsh plugin add github:MengTan100/pocketpilot`）
+  与「下载新版插件」按钮，不用去翻发布页。
+- **App 的升级入口**：入口页底部常驻 `vX · 检查更新`，点一下向电脑端询问；
+  有新版本时弹「发现新版本 vY」→「下载并安装」（打开浏览器下载，由系统确认安装）。
+  还没连上电脑时不硬撑，直接打开发布页。
+- **`GET /version`（电脑端唯一判断处）**：`pc/lib/version-check.js` 四路探测
+  —— `api.github.com` → `ghfast.top` 镜像 → Pages 的 `version.json` → 镜像 raw；
+  10 分钟缓存；**全部失败时明确回"查不到"，不谎报"已是最新"**。
+- 发布页与 `docs/version.json`：静态版本清单，作为最后的兜底通道。
+
+### 变更
+
+- **发布资产改用稳定名**：电脑端插件包固定为 `dsh-plugin-phone-bridge.zip`
+  （不再随版本号变化），页面与面板里的链接从此不用每版都改。
+- 版本号校准：App `versionCode 6 / versionName 0.5.1`，插件包与仓库根包 `0.5.1`，
+  与 tag / Release 完全一致 —— 这是升级检测能工作的前提。
+
 ## [0.5.0] - 2026-10-20
 
 本次为「异地登录 + 稳定性」版本：双通道并存、公网隧道可用、侧栏抽屉、返回键逐层退出，

@@ -21,6 +21,7 @@
   安全区由 MainActivity 的 WindowInsets 监听统一处理。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFFFFF">
@@ -182,6 +183,24 @@
               免责声明与使用须知：常驻入口（不是只有首次启动才看得到）。
               首次启动会强制弹出并要求同意，之后随时可从点这里复查。
             -->
+            <!--
+              版本与升级入口：显示当前版本，点一下就去问电脑端"有没有新版"。
+              判断逻辑只在电脑端（/version），手机只负责显示与跳转安装。
+            -->
+            <TextView
+                android:id="@+id/versionRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp"
+                android:textColor="#6B7280"
+                android:textSize="13sp"
+                tools:text="v0.5.1 · 检查更新" />
+
             <TextView
                 android:id="@+id/termsLink"
                 android:layout_width="wrap_content"

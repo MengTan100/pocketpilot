@@ -275,6 +275,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnSettings.setOnClickListener { showSettingsSheet() }
         // 免责声明与使用须知：入口页常驻一个入口，随时可重看（不是只有首次启动能看到）
         binding.termsLink.setOnClickListener { showTermsDialog(required = false) }
+        // 版本与升级入口：显示当前版本，点击即去问电脑端"有没有新版"
+        binding.versionRow.text = getString(R.string.version_row, BuildConfig.VERSION_NAME)
+        binding.versionRow.setOnClickListener { checkForUpdate(manual = true) }
         // 侧栏把手：调用 DSH 自己的折叠按钮，用它维护的状态
         binding.btnRailToggle.setOnClickListener { toggleDshSidebar() }
 
@@ -2581,6 +2584,60 @@ class MainActivity : AppCompatActivity() {
 
     /** 打开 GitHub 仓库去点 Star。 */
     private fun openRepoUrl() = openUrl(getString(R.string.project_repo_url))
+
+    /**
+     * 版本升级入口（入口页常驻）。
+     *
+     * 判断交给**电脑端**（`/version`）：手机上直连 GitHub 在国内经常不通，
+     * 而电脑端还能走镜像通道；两边因此永远给出一致的结论。
+     * 没有已连接地址时不硬撑，直接把发布页打开让用户自己下。
+     */
+    private fun checkForUpdate(manual: Boolean) {
+        val base = prefs.lastGoodBase.ifBlank { prefs.baseUrl }
+        if (base.isBlank()) {
+            toast(getString(R.string.version_need_connection))
+            openUrl("https://github.com/MengTan100/pocketpilot/releases/latest")
+            return
+        }
+        lifecycleScope.launch {
+            if (manual) {
+                binding.versionRow.text = getString(R.string.version_checking, BuildConfig.VERSION_NAME)
+            }
+            val info = withContext(Dispatchers.IO) { Bridge.checkVersion(base) }
+            binding.versionRow.text = getString(R.string.version_row, BuildConfig.VERSION_NAME)
+
+            if (!info.ok) {
+                if (manual) toast(getString(R.string.version_check_failed, info.error.ifBlank { "network" }))
+                return@launch
+            }
+            if (!info.reachable) {
+                // 电脑端也没连上更新服务器：不谎报"已是最新"
+                if (manual) toast(getString(R.string.version_check_failed, info.error.ifBlank { "-" }))
+                return@launch
+            }
+            if (!info.hasUpdate) {
+                if (manual) toast(getString(R.string.version_up_to_date, BuildConfig.VERSION_NAME))
+                return@launch
+            }
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle(R.string.version_update_title)
+                .setMessage(
+                    getString(
+                        R.string.version_update_message,
+                        BuildConfig.VERSION_NAME,
+                        info.latest.ifBlank { "?" },
+                    )
+                )
+                .setPositiveButton(R.string.version_update_now) { _, _ ->
+                    val url = info.apkUrl.ifBlank {
+                        "https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk"
+                    }
+                    openUrl(url)
+                }
+                .setNegativeButton(R.string.version_later, null)
+                .show()
+        }
+    }
 
     /**
      * 用浏览器打开一个地址。

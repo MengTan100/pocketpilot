@@ -37,6 +37,7 @@ const { createDshProxy } = require('./lib/dsh-proxy');
 // provider 层见 lib/remote.js（隧道由独立守护进程持有，桥接重启复用同一地址）。
 const { createRemoteLayer } = require('./lib/remote');
 const tuner = require('./lib/tuner');
+const versionCheck = require('./lib/version-check');
 
 // 隧道重建冷却：Cloudflare 对快速隧道限流时（HTTP 429 / error 1015），
 // 若每 5 秒重试一次，不仅没用，还会让限流持续更久（实测踩过）。
@@ -65,7 +66,20 @@ const BRIDGE_VERSION = '1.0.0';
 
 /** 发布仓库与插件包名：配对页上的下载链接用，改版本时只改这两处。 */
 const RELEASE_REPO = 'https://github.com/MengTan100/pocketpilot';
-const PLUGIN_ZIP_NAME = 'dsh-plugin-phone-bridge-0.5.0.zip';
+// 资产名不再带版本号：链接可以长期复用，升级时不必改页面/面板。
+const PLUGIN_ZIP_NAME = 'dsh-plugin-phone-bridge.zip';
+
+/**
+ * 当前插件版本：读插件自己的 package.json（**唯一事实来源**，
+ * 不再在代码里手抄一个版本号，避免"发布了新包、面板还显示旧版本"）。
+ */
+const PLUGIN_VERSION = (() => {
+  try {
+    return require('./dsh-plugin-phone-bridge/package.json').version || BRIDGE_VERSION;
+  } catch {
+    return BRIDGE_VERSION;
+  }
+})();
 /**
  * 项目出处指纹（水印第 4 层：运行时/构建指纹）。
  * 出现在：启动日志、状态页 HTML 注释、runtime/bridge-runtime.json。
@@ -1380,6 +1394,8 @@ function renderPairPage(qrDataUrl, info, embed = false) {
           padding:7px 11px;font-size:12.5px;cursor:pointer}
  .copybtn:active{background:#1b2230}
  .dlnote{color:#6f7789;font-size:11.5px;line-height:1.6;max-width:520px}
+ .verrow{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;
+         color:#8b93a7;font-size:12.5px}
 
  /* ---- 嵌入模式：只缩小尺寸，不减内容 ---- */
  body.embed{padding:12px 10px;gap:9px}
@@ -1419,6 +1435,10 @@ ${info.remoteHtml}
     <button class="copybtn" type="button" data-copy="${info.pluginHref}">复制链接</button>
   </div>
   <div class="dlnote">${info.apkNote}</div>
+</div>
+<div class="verrow">
+  <span>插件 v${info.version}${info.updateNote}</span>
+  ${info.updateActions}
 </div>
 <div class="tip">二维码与配对码等同本机操作权限，请勿外发。<br>
 App 里也可点「直接连接」——插着数据线或用同一 WiFi 时会自动发现；<br>
@@ -1563,6 +1583,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/dsh' || url.pathname.startsWith('/dsh/')) {
       if (!authorizeDshAccess(req, url, res)) return;
       proxy.handleRequest(req, res);
+      return;
+    }
+
+    // —— 版本检查：插件面板与手机 App 共用同一份判断 ——
+    //    放在电脑端做，是因为判断逻辑只能有一处；手机只负责显示/跳转。
+    if (route === '/version' && req.method === 'GET') {
+      const info = await versionCheck.check(PLUGIN_VERSION);
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*',
+      });
+      res.end(JSON.stringify({ ok: true, bridge: BRIDGE_VERSION, plugin: PLUGIN_VERSION, ...info }));
       return;
     }
 
@@ -1890,6 +1923,9 @@ const server = http.createServer(async (req, res) => {
         const remoteStableNow = remote.hasStable();
         // ?embed=1 → DSH 插件弹窗内嵌用：排布更紧凑，并回报自身高度供父窗口精确适配
         const embed = url.searchParams.get('embed') === '1';
+        // 版本检查走缓存（10 分钟），失败也不影响配对页本身
+        let updateInfo = null;
+        try { updateInfo = await versionCheck.check(PLUGIN_VERSION); } catch { updateInfo = null; }
         const page = renderPairPage(qrDataUrl, {
           mode: config.mode,
           desktopAlive: desktop.alive,
@@ -1899,6 +1935,15 @@ const server = http.createServer(async (req, res) => {
           apkHref: apkDownloadUrl(),
           pluginHref: pluginDownloadUrl(),
           apkNote: '两者配套使用：手机装 App、电脑装插件。国内打不开 GitHub 时，可用发布页里的加速镜像。',
+          // 版本行：面板里直接看到"当前版本 / 有没有新版"，并给出升级动作。
+          version: PLUGIN_VERSION,
+          updateNote: updateInfo && updateInfo.hasUpdate
+            ? ` · 有新版本 v${updateInfo.latest}`
+            : (updateInfo && updateInfo.reachable ? ' · 已是最新' : ' · 暂时查不到新版本'),
+          updateActions: updateInfo && updateInfo.hasUpdate
+            ? `<button class="copybtn" type="button" data-copy="dsh plugin add github:MengTan100/pocketpilot">复制升级命令</button>` +
+              `<a class="dlbtn ghost" href="${updateInfo.pluginUrl}">下载新版插件</a>`
+            : '',
           // 异地通道：让用户直观看到"人在外面也能连"，以及"这个地址稳不稳"
           tunnelState: tunnelStatus.state,
           tunnelUrl: tunnelStatus.publicUrl || '',

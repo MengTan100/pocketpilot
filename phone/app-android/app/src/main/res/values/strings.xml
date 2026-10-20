@@ -142,6 +142,16 @@
     <string name="terms_accept">I have read and agree</string>
     <string name="terms_decline">Exit</string>
     <string name="terms_close">Close</string>
+    <!-- 版本与升级入口：显示当前版本，点击询问电脑端有没有新版 -->
+    <string name="version_row">v%1$s · Check for updates</string>
+    <string name="version_checking">v%1$s · Checking…</string>
+    <string name="version_up_to_date">Already up to date (v%1$s)</string>
+    <string name="version_update_title">Update available</string>
+    <string name="version_update_message">Installed v%1$s, latest v%2$s.\n\nDownload and install now? The browser opens the download; Android asks you to confirm the install.</string>
+    <string name="version_update_now">Download &amp; install</string>
+    <string name="version_later">Later</string>
+    <string name="version_check_failed">Update check failed: %1$s</string>
+    <string name="version_need_connection">Not connected yet. Opened the release page instead.</string>
     <string name="terms_settings_entry">Disclaimer &amp; Notice</string>
     <string name="terms_version_note">Notice version %1$d · acceptance is required before the first connection.</string>
 
