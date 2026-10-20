@@ -84,6 +84,9 @@ class MainActivity : AppCompatActivity() {
     private var lastPageTick = -1L
     private var frozenTicks = 0
 
+    /** 页面加载看门狗的代号：每次 loadUrl / onPageFinished 都 +1，过期的看门狗自动失效。 */
+    private var loadGeneration = 0
+
     // ---------------------------------------------------------------- 看门狗安全闸
     //
     // 看门狗的"自动刷新 / 重连 / 重建 WebView"都是**破坏性恢复**：会打断用户正在做的事
@@ -769,6 +772,33 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * 页面加载看门狗：15 秒还没加载完就复位加载态并重新选路。
+     *
+     * 为什么必须有它（真实事故 18:18 拔线）：
+     *   · 加载失败时 `onPageFinished` 不会触发，`pageLoading` 会**永久停在 true**；
+     *   · 而 `allowRecovery` 把"加载中"当作闸门 —— 之后所有恢复都被拒绝，
+     *     看门狗连一条日志都不打，用户看到的就是"切到局域网后卡住/局域网不可用"。
+     * 这里给每次 loadUrl 配一个代号，15 秒后若仍是加载态就解锁并重新跑一次选路。
+     */
+    private fun scheduleLoadWatchdog(targetUrl: String) {
+        val generation = ++loadGeneration
+        lifecycleScope.launch {
+            delay(15_000)
+            if (generation != loadGeneration) return@launch   // 已经加载完成，或又切了别的通道
+            if (!pageLoading) return@launch
+            val current = binding.webView.url ?: ""
+            pageLoading = false
+            loadedEntry = ""
+            BridgeLog.warn(
+                "页面 15 秒未完成加载（目标 " + BridgeLog.maskSecrets(targetUrl) +
+                    "，当前 " + BridgeLog.maskSecrets(current) + "）：释放加载态并重新选路"
+            )
+            val again = withContext(Dispatchers.IO) { doConnect() }
+            if (!again.ok) showConnectFailure(again, quiet = true)
+        }
+    }
+
+    /**
      * ⚠️ 必须覆盖它，否则"启动默认停在入口页"会被系统偷偷推翻。
      *
      * 生命周期顺序是 onCreate() → onStart() → onRestoreInstanceState()，
@@ -899,6 +929,8 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 BridgeLog.info("页面加载完成: $url")
+                // 取消"页面加载看门狗"（见 scheduleLoadWatchdog）
+                loadGeneration++
                 // 加载结束：恢复计数基线（否则会把"加载期间没推进"误算成卡死），并解除加载态。
                 lastPageTick = -1L
                 frozenTicks = 0
@@ -919,7 +951,19 @@ class MainActivity : AppCompatActivity() {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
                     Log.w(TAG, "主文档加载失败: ${error?.description}")
-                    setStatus(Status.BAD, getString(R.string.err_handshake), "加载失败，看门狗会自动重试")
+                    // ⚠️ 必须复位 pageLoading：失败时 onPageFinished 不会触发，
+                    // 不复位就会永久停在"加载中"，allowRecovery 之后会拒绝所有恢复 ——
+                    // 用户看到的是"卡在旧页面 / 局域网不可用"，而看门狗一声不吭。
+                    pageLoading = false
+                    loadedEntry = ""
+                    BridgeLog.warn("主文档加载失败: ${error?.description} (${request.url})；释放加载态并重新选路")
+                    setStatus(Status.BAD, getString(R.string.err_handshake), "加载失败，正在重新选路")
+                    lifecycleScope.launch {
+                        delay(1200)
+                        if (pageLoading) return@launch       // 期间已经开始新的加载
+                        val again = withContext(Dispatchers.IO) { doConnect() }
+                        if (!again.ok) showConnectFailure(again, quiet = true)
+                    }
                 }
             }
         }
@@ -1766,10 +1810,19 @@ class MainActivity : AppCompatActivity() {
                 else "$modeLabel · ${cand.label}"
             )
             showWelcome(false)
-            if (loadedEntry != url || binding.webView.url.isNullOrBlank()) {
+            // ⚠️ 判据必须看「页面现在实际在哪」，不能只看 loadedEntry（上次想加载什么）。
+            // 真实事故（18:18 拔线）：loadedEntry 还是局域网地址，但 WebView 已经漂回 127.0.0.1，
+            // 于是切到局域网的这次调用直接跳过 loadUrl —— 选路成功、握手成功，页面却没换，
+            // 用户看到的就是"选中了局域网但局域网不可用"。
+            val currentUrl = binding.webView.url ?: ""
+            if (currentUrl != url) {
                 loadedEntry = url
                 pageLoading = true          // 加载中：看门狗不做任何破坏性恢复
+                BridgeLog.info("加载页面: " + BridgeLog.maskSecrets(url) + "（当前 " + BridgeLog.maskSecrets(currentUrl) + "）")
                 binding.webView.loadUrl(url)
+                scheduleLoadWatchdog(url)
+            } else {
+                BridgeLog.info("页面已在该通道，无需重载: " + BridgeLog.maskSecrets(url))
             }
         }
         return true
