@@ -1183,37 +1183,14 @@ function isLoopbackRequest(req) {
 }
 
 /**
- * 本机是否带着可直发的手机安装包。
+ * 手机 App 下载地址：直接指向发布页的 latest 资产。
  *
- * 查找顺序（先插件包内嵌，再缓存目录）：
- *   1) pc/dsh-plugin-phone-bridge/PocketPilot.apk ← 发布用的插件 zip 里就带着这一份
- *   2) ~/.dsh/phone-bridge-cache/PocketPilot.apk  ← 手动放的缓存位置
- * 两份都没有就返回空串，调用方回落到发布页链接。
- */
-function findLocalApk() {
-  const candidates = [
-    path.join(__dirname, 'dsh-plugin-phone-bridge', 'PocketPilot.apk'),
-    path.join(config.dshHome, 'phone-bridge-cache', 'PocketPilot.apk'),
-  ];
-  for (const file of candidates) {
-    try {
-      const st = fs.statSync(file);
-      if (st.isFile() && st.size > 0) return file;
-    } catch { /* 试下一个 */ }
-  }
-  return '';
-}
-
-/**
- * 给手机用的下载地址：优先局域网 IP（手机在同一 Wi-Fi 时可直接打开），
- * 没有网卡地址时退回回环（USB + adb reverse 场景）。
+ * 为什么只放链接、不在本机代发 APK：面板的作用是"告诉你在哪下"，
+ * 真正下载走 GitHub（国内打不开时页面底部给了加速镜像）。本机代发要多一条
+ * 路由、一份 3.8MB 的随包二进制，收益抵不上复杂度，故不采用。
  */
 function apkDownloadUrl() {
-  const hasLocal = Boolean(findLocalApk());
-  if (!hasLocal) return `${RELEASE_REPO}/releases/latest/download/PocketPilot.apk`;
-  const lan = config.lanAddresses && config.lanAddresses.length > 0 ? config.lanAddresses[0].address : '';
-  const host = lan || '127.0.0.1';
-  return `http://${host}:${config.bridgePort}/apk`;
+  return `${RELEASE_REPO}/releases/latest/download/app-release.apk`;
 }
 
 /** 电脑端插件包：走发布页（体积小，且用户下载的就是与当前版本一致的包）。 */
@@ -1589,34 +1566,6 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // —— 手机 App 安装包：由本机直接提供（插件包内已附带 / 也可放缓存目录）——
-    //    为什么由桥接发而不是给 GitHub 链接：国内直连 GitHub 常被墙/限速，
-    //    而手机此时就在同一 Wi-Fi（或 USB）里，从电脑下载是最快也最稳的路。
-    if (route === '/apk' && req.method === 'GET') {
-      const file = findLocalApk();
-      if (!file) {
-        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
-        res.end('本机没有内置 APK：请用发布页下载，或把 PocketPilot.apk 放到\n' +
-          '  pc/dsh-plugin-phone-bridge/PocketPilot.apk 或 ~/.dsh/phone-bridge-cache/PocketPilot.apk\n');
-        return;
-      }
-      let stat;
-      try { stat = fs.statSync(file); } catch { stat = null; }
-      if (!stat || !stat.size) {
-        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end('APK 读取失败\n');
-        return;
-      }
-      res.writeHead(200, {
-        'content-type': 'application/vnd.android.package-archive',
-        'content-length': stat.size,
-        'content-disposition': 'attachment; filename="PocketPilot.apk"',
-        'cache-control': 'no-store',
-      });
-      fs.createReadStream(file).pipe(res);
-      return;
-    }
-
     if (route === '/' && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       res.end(STATUS_PAGE);
@@ -1946,13 +1895,10 @@ const server = http.createServer(async (req, res) => {
           desktopAlive: desktop.alive,
           target,
           pairCode: PAIR_CODE,
-          // 下载区：APK 优先由本机直发（同一 Wi-Fi 下最快，也绕开国内访问 GitHub 的问题），
-          // 本机没有内置包时回落到发布页链接。
+          // 下载区：只放两条发布链接（App / 插件），面板不代发文件。
           apkHref: apkDownloadUrl(),
           pluginHref: pluginDownloadUrl(),
-          apkNote: findLocalApk()
-            ? 'APK 由本机直接提供（同一 Wi-Fi 下最快）；插件包 zip 内也带着同一份 APK。'
-            : '本机没有内置 APK，链接指向发布页；国内打不开时可用发布页里的加速镜像。',
+          apkNote: '两者配套使用：手机装 App、电脑装插件。国内打不开 GitHub 时，可用发布页里的加速镜像。',
           // 异地通道：让用户直观看到"人在外面也能连"，以及"这个地址稳不稳"
           tunnelState: tunnelStatus.state,
           tunnelUrl: tunnelStatus.publicUrl || '',
