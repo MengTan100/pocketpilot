@@ -7,7 +7,10 @@
 发布包见 [Releases](https://github.com/MengTan100/pocketpilot/releases)，
 图形化发布页见 <https://mengtan100.github.io/pocketpilot/>。
 
-## [未发布]
+## [0.5.0] - 2026-10-20
+
+本次为「异地登录 + 稳定性」版本：双通道并存、公网隧道可用、侧栏抽屉、返回键逐层退出，
+并修掉了白屏、切换不刷新、隧道重复（地址乱变）与公网 handshake 泄露 token 等问题。
 
 ### 新增
 
