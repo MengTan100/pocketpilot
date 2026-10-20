@@ -11,6 +11,15 @@
 
 ### 修复
 
+- **白屏**（手机 WebView 打开 `/dsh/` 一片空白）：
+  - 根因：手机 WebView 发 `Accept-Encoding: gzip, br`，桌面端 DSH 因此压缩返回 HTML；
+    代理为改写 `<base href="/">` → `/dsh/` 先缓存响应体，却把**压缩字节**当 UTF-8 改写，
+    改完仍带 `content-encoding: gzip` 发回 —— Chromium 报 `net::ERR_CONTENT_DECODING_FAILED`，整页空白。
+  - 修复：改写前按 `Content-Encoding` 解压（gzip / deflate / br），解压后移除该响应头并重算长度；
+    解压失败则**原样透传**（宁可丢掉 `<base>` 改写，也不能把损坏正文交给手机）。
+  - 新增 `cdp-screen.mjs`：连手机 WebView 重载并抓「页面现状 + 全部请求状态码 + console + 失败加载」，
+    白屏这类问题不再靠猜。
+  - `test-upstream-auth.js` 增加 gzip 用例（假桌面端会按 `Accept-Encoding` 压缩 HTML），共 15 项。
 - **上游鉴权**（手机端偶发 `dsh web authentication required`）：
   - 探活改为**带鉴权探测**：`/state` 里 `desktop.status=200` / `authenticated=true` 才表示上游真能用。
     以前探测不带 Cookie，日志里永远是 401，既分不清"端口不对"和"鉴权没过"，也把真问题淹没了。
