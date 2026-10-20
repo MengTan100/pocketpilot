@@ -43,6 +43,7 @@
   .badges { display: flex; gap: 8px; flex-wrap: wrap; }
   .badge { font-size: 12px; padding: 3px 9px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px; color: #dbe3ff; }
   .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+  .pair { margin: 16px 0 0; font-size: 13.5px; line-height: 1.55; color: #ffd9a0; max-width: 640px; border-left: 3px solid #f5b301; padding-left: 10px; }
   .btn {
     display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 10px;
     font-weight: 600; font-size: 15px; border: 1px solid transparent; transition: transform .12s ease, box-shadow .12s ease;
@@ -119,19 +120,41 @@
     <p class="tag only-zh">用手机指挥电脑上的 <strong>DeepSeek Harness</strong>：手机端 App + 电脑端 DSH 插件，扫码配对，共享同一个真实会话。</p>
     <p class="tag only-en">Drive <strong>DeepSeek Harness</strong> on your computer from your phone: an Android app plus a DSH plugin, paired by QR code, sharing one real session.</p>
 
+    <!-- 「两件套」下载区：App 与插件必须配套，缺一不可，所以放在同一组里 -->
+    <p class="pair only-zh">⚠️ 两件必须配套使用：手机装 <strong>App</strong>，电脑装 <strong>DSH 插件</strong>。少了任何一件都连不上。</p>
+    <p class="pair only-en">⚠️ Both pieces are required: the <strong>app</strong> on your phone and the <strong>DSH plugin</strong> on your computer. Either one alone cannot connect.</p>
+
     <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span class="only-zh">下载 APK</span><span class="only-en">Download APK</span>
+      <a class="btn btn-primary" href="https://github.com/MengTan100/pocketpilot/releases/latest/download/PocketPilot-v0.5.0-bundle.zip">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M2 8h20"/><path d="M12 3v9"/><path d="m8 8 4 4 4-4"/></svg>
+        <span class="only-zh">一次下载两件（App + 插件）</span><span class="only-en">Download both (app + plugin)</span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg>
+        <span class="only-zh">只下 App（APK）</span><span class="only-en">App only (APK)</span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/MengTan100/pocketpilot/releases/latest/download/dsh-plugin-phone-bridge-0.5.0.zip">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-3V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/><path d="M9 12h6"/></svg>
+        <span class="only-zh">只下电脑端插件（ZIP）</span><span class="only-en">Plugin only (ZIP)</span>
       </a>
       <a class="btn btn-star" href="https://github.com/MengTan100/pocketpilot">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="m12 17.3-6.2 3.7 1.6-7-5.4-4.7 7.2-.6L12 2l2.8 6.7 7.2.6-5.4 4.7 1.6 7z"/></svg>
         <span class="only-zh">给个 Star ⭐</span><span class="only-en">Star this project ⭐</span>
       </a>
-      <a class="btn btn-ghost" href="https://github.com/MengTan100/pocketpilot/releases">
-        <span class="only-zh">所有发布版本</span><span class="only-en">All releases</span>
-      </a>
     </div>
+
+    <p class="muted only-zh">下载慢或打不开？可走国内加速镜像：
+      <a href="https://ghfast.top/https://github.com/MengTan100/pocketpilot/releases/latest/download/PocketPilot-v0.5.0-bundle.zip">合体包（镜像）</a>
+      ·
+      <a href="https://ghfast.top/https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk">APK（镜像）</a>
+      （镜像为第三方代理，仅用于加速，校验方式见页面底部）
+    </p>
+    <p class="muted only-en">Slow or blocked? Use a mirror:
+      <a href="https://ghfast.top/https://github.com/MengTan100/pocketpilot/releases/latest/download/PocketPilot-v0.5.0-bundle.zip">bundle</a>
+      ·
+      <a href="https://ghfast.top/https://github.com/MengTan100/pocketpilot/releases/latest/download/app-release.apk">APK</a>
+      (third-party proxy for speed only; verify with the steps below)
+    </p>
   </div>
 </header>
 
