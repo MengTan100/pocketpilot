@@ -1019,7 +1019,10 @@ const BRIDGE_AUTH_COOKIE = 'dsh-bridge-auth';
    */
   function authorizeDshAccess(req, url, res) {
     const external = isExternalRequest(req);
-    if (!external && config.mode !== 'lan') return true;   // 仅「本机/内网 + 非局域网模式」才免令牌
+    // 只有**回环**请求才免令牌（USB 走 adb reverse 落在 127.0.0.1）。
+    // ⚠️ 不能再拿"非 external"当免令牌条件：桥接现在始终监听 0.0.0.0，
+    //    同网段任何设备都不是 external，那样等于把 DSH 界面（可执行任意代码）敞开给整个 Wi-Fi。
+    if (!external && config.mode !== 'lan' && isLoopbackRequest(req)) return true;
     const cookieHeader = String(req.headers.cookie || '');
     if (tokenEquals(bridgeCookieValue(cookieHeader))) return true;
     if (tokenEquals(url.searchParams.get('k'))) {
@@ -1162,6 +1165,19 @@ const PUBLIC_PATHS = new Set(['/health', '/', '/pair/claim']);
  * 这个判据用于给公开端点降级：本机/局域网可看完整信息，
  * 公网只能拿到最小必要信息，避免把部署细节喂给扫描器。
  */
+/**
+ * 这个请求是不是**从本机回环**来的（adb reverse 的 USB 通道、PC 本机浏览器都算）。
+ *
+ * 为什么单独抽出来：桥接现在始终绑 0.0.0.0（USB + 局域网双通道），
+ * "非 external" 已经不再等于"本机"——同网段的任何设备都不是 external。
+ * 免令牌只能给回环，否则等于把可执行代码的 DSH 界面敞开给整个 Wi-Fi。
+ */
+function isLoopbackRequest(req) {
+  const addr = (req.socket && req.socket.remoteAddress) || '';
+  const ip = addr.replace(/^::ffff:/, '');
+  return ip === '127.0.0.1' || ip === '::1';
+}
+
 function isExternalRequest(req) {
   const host = String(req.headers.host || '').toLowerCase();
   if (/trycloudflare\.com|\.cfargotunnel\.com/.test(host)) return true;
@@ -1537,7 +1553,11 @@ const server = http.createServer(async (req, res) => {
 
     // USB 模式下手机只能经 adb reverse 到达这里，握手/入口免鉴权；
     // 局域网模式强制鉴权，避免泄漏带 token 的入口地址。
-    const usbOnlyPublic = config.mode === 'usb' && (route === '/handshake' || route === '/desktop' || route === '/pair');
+    // ⚠️ 必须同时要求**回环来源**：桥接已改为始终监听 0.0.0.0（USB+局域网双通道），
+    //    只看 mode 的话，同一 Wi-Fi 下任何设备都能免令牌拿到 /handshake（里面含 bridge token）。
+    const usbOnlyPublic = config.mode === 'usb'
+      && isLoopbackRequest(req)
+      && (route === '/handshake' || route === '/desktop' || route === '/pair');
     // /pair.json 与 /pair 的内容都含令牌，不能对局域网开放；
     // 但 DSH 前端的「手机连接」面板就在本机运行（它用 iframe 直接嵌 /pair 页面），
     // 需要免鉴权访问。判据用 TCP 来源地址（客户端无法伪造），只放行回环请求，
@@ -2077,8 +2097,21 @@ async function main() {
     log(`创建工作区失败：${error.message}`);
   }
 
-  server.listen(config.bridgePort, config.mode === 'lan' ? '0.0.0.0' : '127.0.0.1', () => {
-    log(`桥接控制面监听 http://${config.mode === 'lan' ? '0.0.0.0' : '127.0.0.1'}:${config.bridgePort}`);
+  // ⚠️ 始终绑 0.0.0.0：USB 与局域网**同时可用**（"双通道叠加"）。
+  //
+  // 以前 usb 模式只绑 127.0.0.1 —— 那时拔掉数据线，手机手里只剩 `127.0.0.1:3080`
+  // 这个死地址，局域网候选再多也没用：**根本没有监听**，App 想切也切不过去。
+  // 现在两条通道一直并行：USB 走 adb reverse（回环，免令牌），局域网走真实网卡
+  //（必须带 bridge token，见 authorizeDshAccess）。手机择优用一条、另一条待命，
+  // 拔线/换网时可以直接切换，不必等桥接重启。
+  server.listen(config.bridgePort, '0.0.0.0', () => {
+    const lanUrls = config.lanAddresses.map((entry) => `http://${entry.address}:${config.bridgePort}`);
+    log(`桥接控制面监听 0.0.0.0:${config.bridgePort}`);
+    log(`  · USB 通道（adb reverse）: http://127.0.0.1:${config.bridgePort}（免令牌）`);
+    log(`  · 局域网通道: ${lanUrls.length ? lanUrls.join(' , ') : '(未发现局域网地址)'}（需要 ?k=<bridgeToken>）`);
+    if (lanUrls.length > 0 && config.mode !== 'lan') {
+      log('  提示：局域网通道首次使用若连不上，请允许 Node.js 通过 Windows 防火墙（专用网络）。');
+    }
   });
 
   await syncTunnel(config);
