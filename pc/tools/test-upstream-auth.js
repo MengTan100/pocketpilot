@@ -15,6 +15,7 @@
 
 const http = require('node:http');
 const net = require('node:net');
+const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -60,8 +61,18 @@ const fake = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === '/') {
+    const body = '<!doctype html><html><head><base href="/"></head><body>fake desktop</body></html>';
+    // 手机 WebView 会带 Accept-Encoding，真实 DSH 会压缩 —— 这里必须复刻，
+    // 否则测不出"改 <base> 前忘了解压"这种白屏级 bug。
+    const accept = String(req.headers['accept-encoding'] || '');
+    if (accept.includes('gzip')) {
+      const gz = zlib.gzipSync(Buffer.from(body, 'utf8'));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-encoding': 'gzip', 'content-length': gz.length });
+      res.end(gz);
+      return;
+    }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end('<!doctype html><html><head><base href="/"></head><body>fake desktop</body></html>');
+    res.end(body);
     return;
   }
   res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
@@ -85,16 +96,21 @@ fake.on('upgrade', (req, socket) => {
 });
 
 // ---------------------------------------------------------------- 请求工具
-function bridgeRequest(method, pathname, { body, token } = {}) {
+function bridgeRequest(method, pathname, { body, token, headers: extraHeaders } = {}) {
   return new Promise((resolve) => {
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body), 'utf8');
-    const headers = {};
+    const headers = { ...(extraHeaders || {}) };
     if (payload) { headers['content-type'] = 'application/json'; headers['content-length'] = payload.length; }
     if (token) headers['x-bridge-token'] = token;
     const req = http.request({ host: BRIDGE.host, port: BRIDGE.port, path: pathname, method, headers }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
+      res.on('end', () => {
+        let text = Buffer.concat(chunks).toString('utf8');
+        const enc = String(res.headers['content-encoding'] || '').toLowerCase();
+        if (enc === 'gzip') { try { text = zlib.gunzipSync(Buffer.concat(chunks)).toString('utf8'); } catch { /* 留给断言报错 */ } }
+        resolve({ status: res.statusCode, headers: res.headers, body: text });
+      });
     });
     req.on('error', (error) => resolve({ status: 0, body: error.message }));
     if (payload) req.end(payload); else req.end();
@@ -168,6 +184,15 @@ async function main() {
   check('GET /dsh/ → 200', page.status === 200, `HTTP ${page.status}`);
   check('上游是假桌面端', page.body.includes('fake desktop'), page.body.slice(0, 60).replace(/\s+/g, ' '));
   check('<base> 被改写到 /dsh/', page.body.includes('<base href="/dsh/">'));
+
+  // 白屏回归：手机 WebView 一定带 Accept-Encoding，上游压缩，代理必须**先解压再改写**
+  const gzPage = await bridgeRequest('GET', '/dsh/', { headers: { 'accept-encoding': 'gzip, deflate, br' } });
+  const gzOk = gzPage.status === 200
+    && gzPage.body.includes('fake desktop')
+    && gzPage.body.includes('<base href="/dsh/">')
+    && !gzPage.headers['content-encoding'];
+  check('压缩的 HTML 也能正确改写（白屏回归）', gzOk,
+    `HTTP ${gzPage.status}, content-encoding=${gzPage.headers['content-encoding'] || '(无)'}`);
 
   const api = await bridgeRequest('GET', '/dsh/api/ping');
   check('GET /dsh/api/ping → 200', api.status === 200 && api.body.includes('"ok":true'), `HTTP ${api.status}`);

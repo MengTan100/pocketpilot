@@ -25,6 +25,34 @@
 
 const http = require('node:http');
 const net = require('node:net');
+const zlib = require('node:zlib');
+
+/**
+ * 按 Content-Encoding 解压响应体。
+ *
+ * 为什么必须有它：手机 WebView 发 `Accept-Encoding: gzip, deflate, br`，上游会压缩；
+ * 而改写 <base> 必须拿到**明文**。不解压就直接当 UTF-8 改，改出来的是垃圾字节，
+ * 再带上 `content-encoding` 发回去，浏览器报 `ERR_CONTENT_DECODING_FAILED` —— 白屏。
+ *
+ * @param {Buffer} buffer 原始（可能是压缩过的）响应体
+ * @param {string} encoding Content-Encoding 头
+ * @returns {Buffer|null} 解压结果；无法解压返回 null（调用方应原样透传）
+ */
+function decodeBody(buffer, encoding) {
+    const enc = String(encoding || '').toLowerCase().trim();
+    if (!enc || enc === 'identity') return buffer;
+    try {
+        if (enc === 'gzip' || enc === 'x-gzip') return zlib.gunzipSync(buffer);
+        if (enc === 'br') return zlib.brotliDecompressSync(buffer);
+        if (enc === 'deflate') {
+            // 有的服务器发的是 raw deflate（没有 zlib 头），两种都试
+            try { return zlib.inflateSync(buffer); } catch { return zlib.inflateRawSync(buffer); }
+        }
+    } catch {
+        return null;
+    }
+    return null;
+}
 
 /** 逐跳头不应转发。 */
 const HOP_BY_HOP = new Set([
@@ -158,11 +186,34 @@ function createDshProxy(options) {
             // ⚠️ 必须改写 <base>：DSH 首页现在输出 <base href="/">，而手机是经 /dsh/ 前缀访问的。
             // 不改写时，页面会去 /assets/... 取资源 → 全部 404 → 用户看到**纯白屏**（实测）。
             // 旧版 DSH 输出 <base href="./">，两种写法都要处理。
+            //
+            // ⚠️⚠️ 但改写之前**必须先解压**：手机 WebView 会发 `Accept-Encoding: gzip, br`，
+            // 上游于是压缩返回。旧实现直接 `Buffer.concat(chunks).toString('utf8')` 去改写，
+            // 等于拿压缩字节当文本改，改完还带着 `content-encoding: gzip` 发回去 ——
+            // 浏览器解码失败，整页报 `net::ERR_CONTENT_DECODING_FAILED`，表现就是**白屏**。
+            // （PC 上用 Invoke-WebRequest 测不出来，因为它不发 Accept-Encoding。）
             if (ctype.includes("text/html")) {
                 const chunks = [];
                 proxyRes.on("data", (c) => chunks.push(c));
                 proxyRes.on("end", () => {
-                    let html = Buffer.concat(chunks).toString("utf8");
+                    let raw = Buffer.concat(chunks);
+                    const encoding = String(outHeaders["content-encoding"] || "").trim().toLowerCase();
+                    const decoded = decodeBody(raw, encoding);
+                    if (decoded) {
+                        raw = decoded;
+                        delete outHeaders["content-encoding"];   // 已解压，别再告诉浏览器它被压缩过
+                    } else if (encoding && encoding !== "identity") {
+                        // 解不开就**原样透传**：宁可丢掉 <base> 改写（最多资源 404），
+                        // 也不能把损坏的正文交给手机（那就是白屏）。
+                        log(`proxy 无法解压上游 HTML（${encoding}），原样透传: ${target}`);
+                        outHeaders["content-length"] = String(raw.length);
+                        delete outHeaders["transfer-encoding"];
+                        res.writeHead(proxyRes.statusCode || 502, outHeaders);
+                        res.end(raw);
+                        return;
+                    }
+
+                    let html = raw.toString("utf8");
                     const before = html;
                     html = html
                         .replace(/<base\s+href=["']\/["']/i, '<base href="/dsh/"')
