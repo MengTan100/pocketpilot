@@ -21,7 +21,17 @@ import java.util.Locale
 object BridgeLog {
 
     private const val MAX_BYTES = 512L * 1024
-    private const val TAG = "DshBridge"
+
+    /**
+     * logcat 的 tag。
+     *
+     * ⚠️ 必须是**纯 ASCII 且不含空格**，否则 Android 会把它当作"非法 tag"直接丢弃。
+     * 这里的 DshBridge 与 MainActivity.TAG 保持一致 —— 于是
+     * `adb logcat -s DshBridge:V` 一条命令就能看到 App 的全部诊断日志，
+     * 不必在两个 tag 之间来回切（用户反馈"adb logcat 里看不到任何相关输出"，
+     * 一半原因就是 tag 不统一 + 级别被过滤，见 append() 的注释）。
+     */
+    const val TAG = "DshBridge"
 
     private var logFile: File? = null
     private val stamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
@@ -59,11 +69,17 @@ object BridgeLog {
         // 令牌等同电脑操作权限（见免责声明第 4 条），日志会被用户导出反馈，绝不能明文。
         val safe = maskSecrets(message)
         val line = "${stamp.format(Date())} [$level] $safe"
+        // ⚠️ 级别必须 ≥ INFO，否则真机上什么都看不见（这是一个实际踩过的坑）：
+        //    Android 每条 tag 的默认最低级别是 INFO，因此 Log.d/Log.v **默认被丢弃**。
+        //    旧实现把 INFO 也写成 Log.DEBUG → `adb logcat` 里桥接日志一条都没有，
+        //    排查"扫码失败卡在哪一步"时完全没有线索（用户实测确认了这一点）。
+        //    INFO/HEAL 走 Log.INFO，WARN/ERROR 各自对应 —— 从此关键步骤一定在 logcat 里可见。
+        //    过滤示例：`adb logcat -s DshBridge:V`
         Log.println(
             when (level) {
                 "ERROR" -> Log.ERROR
                 "WARN" -> Log.WARN
-                else -> Log.DEBUG
+                else -> Log.INFO
             },
             TAG, safe
         )

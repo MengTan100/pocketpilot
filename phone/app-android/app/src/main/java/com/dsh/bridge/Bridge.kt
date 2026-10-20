@@ -38,6 +38,18 @@ object Bridge {
         val serverTime: Long = 0L,
         val usbBase: String = "",
         val lanBases: List<String> = emptyList(),
+        /**
+         * 桥接发布的**异地候选**（固定配置 → Tailscale 固定地址 → Cloudflare 隧道，已排序）。
+         *
+         * 为什么要带回来：异地的临时隧道地址会变，而 App 只有在**能连上电脑**时才知道新地址。
+         * 所以每次经 USB/局域网握手成功，都要把这批地址覆盖写进 prefs.remoteHints，
+         * 供"人在外面、只有异地可走"的时候使用（这就是异地过期自救的关键一环）。
+         */
+        val remoteBases: List<String> = emptyList(),
+        /** 是否存在"重启也不变"的固定异地通道（自有域名 / Tailscale 100.x）。 */
+        val remoteStable: Boolean = false,
+        /** 电脑端对异地通道状态的一句话说明（可直接展示，便于用户知道该做什么）。 */
+        val remoteNote: String = "",
         val desktopAlive: Boolean = false,
         val dshRunning: Boolean = false,
         val error: String? = null
@@ -71,13 +83,17 @@ object Bridge {
         port: Int = 3080,
         remoteBase: String? = null,
         lanHints: List<String> = emptyList(),
-        usbHints: List<String> = emptyList()
+        usbHints: List<String> = emptyList(),
+        remoteHints: List<String> = emptyList()
     ): List<Endpoint> {
         val list = mutableListOf<Endpoint>()
         if (!configured.isNullOrBlank()) list += Endpoint(normalize(configured), "已配对")
         if (!lastGood.isNullOrBlank()) list += Endpoint(normalize(lastGood), "上次可用")
         lanHints.forEach { if (it.isNotBlank()) list += Endpoint(normalize(it), "已知局域网") }
-        // 异地通道：本机与局域网都不通时（人在外面）用它
+        // 异地通道：本机与局域网都不通时（人在外面）用它。
+        // remoteHints 是上次经本地路径学到的最新地址，先于单值的 remoteBase 加入
+        // （两者常是同一个；都留着可以让"上次的主地址失效、备用地址还活着"这种情况也连上）。
+        remoteHints.forEach { if (it.isNotBlank()) list += Endpoint(normalize(it), "已知异地") }
         if (!remoteBase.isNullOrBlank()) list += Endpoint(normalize(remoteBase), "异地隧道")
         usbHints.forEach { if (it.isNotBlank()) list += Endpoint(normalize(it), "USB 隧道") }
         // USB 隧道：由 PC 端 adb reverse 建立，走线最快
@@ -97,13 +113,15 @@ object Bridge {
         port: Int = 3080,
         remoteBase: String? = null,
         lanHints: List<String> = emptyList(),
-        usbHints: List<String> = emptyList()
+        usbHints: List<String> = emptyList(),
+        remoteHints: List<String> = emptyList()
     ): List<LinkCandidate> = Link.candidates(
         configured = configured,
         lastGood = lastGood,
         remoteBase = remoteBase,
         lanHints = lanHints,
         usbHints = usbHints,
+        remoteHints = remoteHints,
         port = port
     )
 
@@ -152,8 +170,10 @@ object Bridge {
         val bases: List<String> = emptyList(),
         val token: String = "",
         val mode: String = "",
-        /** 异地（Cloudflare 隧道）基址；桥接未开隧道时为 null。 */
+        /** 异地（隧道/固定地址）基址；桥接没提供时为 null。 */
         val remoteBase: String? = null,
+        /** 全部异地候选（App 会持久化到 remoteHints）。 */
+        val remoteBases: List<String> = emptyList(),
         val error: String? = null
     )
 
@@ -191,7 +211,20 @@ object Bridge {
                     bases = bases,
                     token = json.optString("token"),
                     mode = json.optString("mode"),
-                    remoteBase = json.optString("remoteBase").takeIf { it.isNotBlank() }
+                    remoteBase = json.optString("remoteBase").takeIf { it.isNotBlank() },
+                    remoteBases = run {
+                        val out = mutableListOf<String>()
+                        json.optJSONArray("remoteBases")?.let { arr ->
+                            for (i in 0 until arr.length()) {
+                                val b = arr.optString(i)
+                                if (b.isNotBlank()) out += b
+                            }
+                        }
+                        if (out.isEmpty()) {
+                            json.optString("remoteBase").takeIf { it.isNotBlank() }?.let { out += it }
+                        }
+                        out.distinct()
+                    }
                 )
             } else {
                 val msg = json.optString("message")
@@ -294,14 +327,21 @@ object Bridge {
      *
      * 为什么不是"逐个试"：候选里往往同时有死地址（旧局域网）与必然超时的回环地址
      *（拔线后 127.0.0.1 不通要等满一个超时）。串行时最坏耗时 = 候选数 × 超时，
-     * 用户每次连接都要白等好几十秒；并发之后总耗时≈单个超时（1.2s 级）。
+     * 用户每次连接都要白等好几十秒；并发之后总耗时≈单个超时。
+     *
+     * 超时**按链路类型**区分（Link.probeTimeoutFor）：异地链路实测 0.92~1.73s，
+     * 沿用 1.2s 会让异地候选经常直接超时 → 用户在外时"明明能连却选不出来"。
+     * 异地走 5s，并在失败后独立重试 2 次（见 Link.probeAll）。
      *
      * 返回"选了谁 + 全部探测明细 + 为什么"：日志与界面提示都靠它，
      * 从而做到可解释（用户看到的不是一句笼统的"连接失败"）。
      */
     fun pickBest(candidates: List<LinkCandidate>): LinkSelection {
-        // 并发探测每一条（Link.probeAll 内部用线程池，互不等待）
-        val probes = Link.probeAll(candidates, PROBE_TIMEOUT_MS) { base, timeout ->
+        // 并发探测每一条（Link.probeAll 内部用线程池，互不等待），超时按类型给
+        val probes = Link.probeAll(
+            candidates = candidates,
+            timeoutFor = { c -> Link.probeTimeoutFor(c.mode) }
+        ) { base, timeout ->
             probe(base, timeout.toInt())
         }
         val byBase = probes.associateBy { it.base }
@@ -346,6 +386,26 @@ object Bridge {
             endpoints.optJSONArray("lanBases")?.let { arr ->
                 for (i in 0 until arr.length()) lanBases += arr.optString(i)
             }
+            // 异地候选：优先读新字段 remoteBases；旧版桥接只有 remoteBase 单值，兼容之。
+            val remoteBases = mutableListOf<String>()
+            endpoints.optJSONArray("remoteBases")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val b = arr.optString(i)
+                    if (b.isNotBlank()) remoteBases += b
+                }
+            }
+            if (remoteBases.isEmpty()) {
+                endpoints.optString("remoteBase").takeIf { it.isNotBlank() }?.let { remoteBases += it }
+            }
+            // 顶层也可能带 remoteBases（/pair/claim 的返回结构），一起兜住
+            if (remoteBases.isEmpty()) {
+                json.optJSONArray("remoteBases")?.let { arr ->
+                    for (i in 0 until arr.length()) {
+                        val b = arr.optString(i)
+                        if (b.isNotBlank()) remoteBases += b
+                    }
+                }
+            }
             Handshake(
                 ok = json.optBoolean("ok", false),
                 mode = json.optString("mode"),
@@ -353,6 +413,10 @@ object Bridge {
                 serverTime = json.optLong("serverTime", 0L),
                 usbBase = endpoints.optString("usbBase"),
                 lanBases = lanBases,
+                remoteBases = remoteBases.distinct(),
+                remoteStable = json.optBoolean("remoteStable", false)
+                    || endpoints.optBoolean("remoteStable", false),
+                remoteNote = endpoints.optString("remoteNote").ifBlank { json.optString("remoteNote") },
                 desktopAlive = desktop.optBoolean("alive", false),
                 dshRunning = dsh.optBoolean("running", false)
             )

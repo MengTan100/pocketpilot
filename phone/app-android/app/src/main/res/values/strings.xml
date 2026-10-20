@@ -98,15 +98,30 @@
     <string name="link_mode_remote">Remote</string>
     <!-- Status detail, e.g. “Wi-Fi · Known LAN · 40ms” -->
     <string name="status_link_detail">%1$s · %2$s · %3$dms</string>
+    <!-- Shown when the active route is Remote: remote links are legitimately slower. -->
+    <string name="link_remote_slow">Remote link, slower than USB/Wi-Fi</string>
     <!--
       Advice shown when every known address is unreachable. Deliberately not a bare
-      “connection failed”: the most common cause is a DHCP lease change on the router,
-      so the stored LAN address is stale (measured: stored 192.168.0.8, real 192.168.0.4).
+      “connection failed”: the two most common causes are a DHCP lease change on the router
+      (stale LAN address; measured: stored 192.168.0.8, real 192.168.0.4) and a changed
+      remote tunnel address (the tunnel process was restarted).
+      ⚠️ The ORDER of these items is a contract with Link.adviceIndex() and is asserted by
+      LinkSelfTest: 0 = LAN+Remote, 1 = LAN only, 2 = Remote only, 3 = USB only, 4 = none.
     -->
+    <string-array name="link_advice">
+        <item>Tried %1$d known address(es), none responded. Two possibilities: (1) your computer’s LAN address changed — scan the pairing QR code again; (2) the remote tunnel address just changed — open the app once on the same network to sync the new address, or scan again.</item>
+        <item>Tried %1$d known address(es), none responded. Your computer’s LAN address may have changed: reopen the pairing QR code on the computer and scan it again.</item>
+        <item>Tried %1$d known address(es), none responded. The remote tunnel address may have just changed: open the app once on the same network to sync it automatically, or pair again by QR code. To avoid this permanently, configure a fixed remote address (your own domain) on the computer.</item>
+        <item>Tried %1$d known address(es), none responded. Please run start-bridge.bat on your computer and make sure the USB cable is connected (USB debugging authorised).</item>
+        <item>Tried %1$d known address(es), none responded. Please check that start-bridge.bat is running on your computer and that the USB cable is connected.</item>
+    </string-array>
     <string name="err_addr_may_changed">Your computer’s LAN address may have changed: reopen the pairing QR code on the computer and scan it again.</string>
     <string name="err_all_unreachable">None of the known addresses responded (tried %1$d). %2$s</string>
     <!-- Changing the target host must clear the old token: never send credentials to a host that does not know them. -->
-    <string name="link_token_cleared">Target host changed — old token cleared, pairing again…</string>
+    <string name="link_token_cleared">Target host rejected the token (401) — token cleared, pairing again…</string>
+    <!-- WebView could not load the DSH page (the last of the four possible failure points). -->
+    <string name="err_load_failed">Page failed to load</string>
+    <string name="err_load_failed_detail">Could not open the DSH page (error %1$d: %2$s). The connection itself may be fine — check that DSH is running on your computer. The watchdog will retry automatically.</string>
 
     <!-- 同步状态胶囊：只在"补同步中 / 刚重连 / 未同步"时短暂出现，正常时隐藏 -->
     <string name="sync_chip_desc">Conversation sync status</string>

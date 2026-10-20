@@ -32,9 +32,10 @@ const { execFileSync, execFile } = require('node:child_process');
 const { DshClient, DEFAULT_TIMEOUT_MS } = require('./lib/dsh-client');
 const { mintCookie, probeInstance } = require('./lib/desktop-auth');
 const { createDshProxy } = require('./lib/dsh-proxy');
-// Cloudflare Tunnel：异地（不同网络）访问用。
+// Cloudflare Tunnel + 可选 Tailscale：异地（不同网络）访问用。
 // PC 在 NAT 后无公网入口，而手机端不装额外 App，只能由 PC 主动出站建隧道。
-const { createTunnel } = require('./lib/tunnel');
+// provider 层见 lib/remote.js（隧道由独立守护进程持有，桥接重启复用同一地址）。
+const { createRemoteLayer } = require('./lib/remote');
 
 /** 二维码生成：局部依赖，缺失时降级为纯文本配对信息。 */
 let qrcode = null;
@@ -128,12 +129,32 @@ function findDshCli() {
 
 /** 枚举本机可用的局域网 IPv4 地址（排除回环）。 */
 /**
- * 本机全部可用的 IPv4 地址（供手机端择优）。
+ * 判断是否落在 CGNAT 段 100.64.0.0/10 —— **Tailscale 的地址段**。
+ *
+ * 为什么单独一个函数：这个判断现在有**两个相反的用途**，写错一个就会出事：
+ *   ① 组装「局域网」候选时要**排除**它 —— 装了 Tailscale 时 100.x 常被系统排在 WLAN
+ *      前面当"首选地址"，但手机在同一 Wi-Fi 下根本连不到它，当成局域网候选只会让
+ *      /handshake 多下发一条死地址；
+ *   ② 组装「异地」候选时要**包含**它 —— 100.x 是 CGNAT + WireGuard 加密的跨 NAT 地址，
+ *      两端都登录同一个 tailnet 时人在外面也能连上，且**地址固定不变**，
+ *      正好补掉 Cloudflare 快速隧道"每次重启就换地址"的致命缺点。
+ * 所以这里把 100.x 从局域网里"拿走"，同时交给 remoteBases 去发布（见 remoteBases()）。
+ */
+function isTailscaleCgnat(address) {
+  const text = String(address || '');
+  // 100.64.0.0/10 → 第二段 64..127
+  return /^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(text);
+}
+
+/**
+ * 本机全部可用的**局域网** IPv4 地址（供手机端择优）。
  *
  * 过滤掉两类不可用地址：
  *  - 169.254.* link-local：路由不可达，典型来源是尚未登录的 Tailscale 网卡；
+ *  - 100.64.0.0/10（Tailscale CGNAT）：它不是局域网地址，改由 remoteBases() 作为
+ *    **异地**候选发布，不能在这里丢掉（见 isTailscaleCgnat 的注释）；
  *  - 回环由调用方另行补充，不在此列。
- * 虚拟网卡（Tailscale 100.x、ZeroTier 等）会被保留 —— 它们是跨网络访问的入口。
+ * 其它虚拟网卡（ZeroTier、Hyper-V 等）保持原样。
  */
 function lanAddresses() {
   const out = [];
@@ -142,14 +163,14 @@ function lanAddresses() {
     for (const entry of list || []) {
       if (entry.family !== 'IPv4' || entry.internal) continue;
       if (entry.address.startsWith('169.254.')) continue;
-      // 排除 Tailscale 的 CGNAT 段（100.64.0.0/10）：装了 Tailscale 时它常被排在
-      // WLAN 前面当"首选地址"，但手机根本连不到那个地址。
-      if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(entry.address)) continue;
+      if (isTailscaleCgnat(entry.address)) continue;
       out.push({ name, address: entry.address });
     }
   }
   return out;
 }
+
+
 
 const DEFAULT_CONFIG = {
   mode: 'usb',
@@ -173,12 +194,34 @@ const DEFAULT_CONFIG = {
   deviceSerial: '',
   trustedHosts: [],
   autoTunnel: true,
+  // 手工固定异地地址（可选，留空 = 不影响既有行为）。
+  // 形如 "https://your.domain" 或 Tailscale 的 "http://100.x.y.z:3080"。
+  // 为什么要留这个口子：免费快速隧道的地址每次重启都会变（实测一小时内变过 4 次），
+  // 手机里缓存的异地地址必然过期；写了固定地址就不会再有这个问题，且**优先于**隧道。
+  remoteBase: '',
+  // Tailscale（100.64.0.0/10）来的请求是否当作"内网"看待。
+  // 默认 true：其流量本身已由 WireGuard 端到端加密，且只有登录同一 tailnet 的设备可达。
+  // 注意它**不会**放宽鉴权 —— 只有"局域网模式下的本机/内网免令牌"这一条会多认 100.x；
+  // 公网（隧道）请求依旧必须带令牌（见 isExternalRequest 与 authorizeDshAccess）。
+  trustTailscaleAsLan: true,
   // Cloudflare 隧道（异地/跨网络访问）。默认关闭：
   // 它会为桥接开一个公网入口，属于"扩大暴露面"的操作，必须由用户显式开启
   // （命令行 --tunnel，或配置里 enableTunnel: true）。
   enableTunnel: false,
   // 留空则用内置路径 tools/bin/cloudflared.exe
   tunnelBinary: '',
+  // 复用已有隧道（**默认开**）：隧道由独立守护进程持有并落盘 runtime/tunnel.json，
+  // 桥接重启时读它 → 复用同一条隧道 → **异地地址保持不变**。
+  // 这正是"异地永远连不上"的根治点（旧实现每次重启都换地址，App 缓存的必然过期）。
+  tunnelReuse: true,
+  // 退出桥接时是否把隧道一起停掉。默认 false：停了就换地址，异地又得重新学。
+  tunnelStopOnExit: false,
+  // 异地通道 provider 及优先级（前 = 优先）。cloudflared 由项目自带、无需账号，
+  // tailscale 是可选增强（装了且登录就有**固定** 100.x 地址）。
+  remoteProviders: ['cloudflared', 'tailscale'],
+  // 是否允许本项目自动下载并安装 Tailscale（需要用户确认 + 管理员权限；默认只下载不安装）
+  tailscaleAutoInstall: true,
+  tailscaleAutoInstallConfirm: false,
   keepDshOnExit: false,
   pushHandshakeToDevice: false,
   maxConcurrentTasks: 2,
@@ -198,6 +241,8 @@ function applyModeRules(merged) {
   // 的 127.0.0.1 才通（症状就是"不插线登不上"）。
   // 改成 getter 后，/pair.json、二维码、状态页、运行时快照、/handshake 等消费点
   // 全部自动拿到当前地址，不必逐个改。
+  // ⚠️ 注意 lanAddresses 只含**局域网**地址；Tailscale 的 100.x 被它有意排除了，
+  //    改由 remoteBases() 作为**异地**候选发布（快照问题同理：remoteBases() 每次现算）。
   Object.defineProperty(merged, 'lanAddresses', {
     get: () => lanAddresses(),
     enumerable: true,
@@ -220,6 +265,26 @@ function applyCliOverrides(config) {
     else if (arg === '--tunnel') { config.enableTunnel = true; }
     else if (arg === '--no-tunnel') { config.enableTunnel = false; }
     else if (arg === '--tunnel-binary' && next) { config.tunnelBinary = next; i += 1; }
+    // 隧道复用（默认开）：重启桥接时沿用同一条隧道 → 异地地址不变。
+    // --tunnel-restart 是"我就要一个新地址"的显式出口（旧地址可能已被 Cloudflare 回收）。
+    else if (arg === '--tunnel-reuse') { config.tunnelReuse = true; }
+    else if (arg === '--tunnel-restart' || arg === '--no-tunnel-reuse') { config.tunnelReuse = false; }
+    // 退出时是否连隧道一起停：默认**不停**（停了就换地址，异地又得重新学）
+    else if (arg === '--tunnel-stop') { config.tunnelStopOnExit = true; }
+    else if (arg === '--keep-tunnel') { config.tunnelStopOnExit = false; }
+    // 异地 provider 列表与顺序（前 = 优先）：--remote-providers cloudflared,tailscale
+    else if (arg === '--remote-providers' && next) {
+      config.remoteProviders = String(next).split(',').map((s) => s.trim()).filter(Boolean);
+      i += 1;
+    }
+    // 固定异地地址（自有域名或固定 100.x）：--remote-base https://your.domain
+    else if (arg === '--remote-base' && next) { config.remoteBase = next; i += 1; }
+    // Tailscale（可选增强）：--install-tailscale 让项目自己下载安装；--yes 才真的执行安装
+    else if (arg === '--install-tailscale') { config.tailscaleAutoInstall = true; }
+    else if (arg === '--yes' || arg === '-y') { config.tailscaleAutoInstallConfirm = true; }
+    else if (arg === '--no-tailscale') {
+      config.remoteProviders = (config.remoteProviders || []).filter((p) => p !== 'tailscale');
+    }
   }
   return applyModeRules(config);
 }
@@ -474,32 +539,81 @@ dsh.onExit = (code) => {
   }, 3000);
 };
 
-// ---------------------------------------------------------------- 异地通道
+// ---------------------------------------------------------------- 异地通道（provider 层）
 
 /**
- * Cloudflare 隧道实例（异地/跨网络访问用）。
+ * 异地通道 = 一组可替换的 provider，由 lib/remote.js 统一管理：
  *
- * 只在配置里开启时才建立。地址是临时的（trycloudflare.com），
- * 每次重启会变，因此统一由 /pair.json 与配对页发布给手机，
- * App 每次配对/握手都会取到当前有效地址。
+ *   ① remoteBase（配置里手写的固定地址）—— 最高优先，用户说了算；
+ *   ② tailscale   —— 可选增强：装了并登录就有**固定不变**的 100.x 地址；
+ *   ③ cloudflared —— **本项目自带**的隧道（tools/bin/cloudflared.exe）：
+ *                     无需账号、无需用户安装，默认就是它兜底。
+ *
+ * 本代的关键改动（对应真实故障"异地永远连不上"）：
+ *   隧道不再由桥接直接持有，而是交给**独立守护进程**（lib/cloudflared-supervisor.js）。
+ *   桥接重启时读 runtime/tunnel.json 就能**复用同一条隧道**，
+ *   Cloudflare 的域名只在隧道进程重启时才变 —— 于是地址终于稳定了。
+ *   正常退出时**不杀隧道**（要显式 --tunnel-stop），地址可以长期存活。
  *
  * 安全边界：隧道只指向桥接端口，不直接暴露 DSH；
  * 桥接自身的 token 鉴权在隧道之上依然生效（隧道不绕过鉴权）。
  */
 const tunnelBinary = config.tunnelBinary || path.join(__dirname, 'tools', 'bin', 'cloudflared.exe');
-// 注意命名：文件前面已有一个 tunnel 常量（ADB 隧道），这里必须区分开
-const cfTunnel = config.enableTunnel
-  ? createTunnel({
-      binary: tunnelBinary,
-      target: `http://127.0.0.1:${config.bridgePort}`,
-      log,
-    })
-  : null;
 
-if (cfTunnel) {
-  log(`异地通道已启用，正在建立隧道（binary=${tunnelBinary}）`);
-  const r = cfTunnel.start();
-  if (!r.ok) log(`隧道启动失败：${r.error}`);
+const remote = createRemoteLayer({
+  providers: config.remoteProviders,
+  remoteBase: config.remoteBase,
+  port: config.bridgePort,
+  cfTunnelBinary: tunnelBinary,
+  cfEnabled: config.enableTunnel,
+  // 持久化隧道（复用地址）是默认行为；--tunnel-restart 时 config.tunnelReuse 为 false
+  cfPersistent: true,
+  cfReuse: config.tunnelReuse !== false,
+  runtimeDir: RUNTIME_DIR,
+  log,
+});
+
+// 兼容旧命名：很多地方（/health、运行时快照）仍按"隧道"这个词读取状态
+const cfTunnel = remote.tunnel;
+
+/**
+ * 启动异地通道。**不 await**：隧道首次握手要几秒，不能让 HTTP 服务等它。
+ * 结果通过日志与 runtime/tunnel.json 反映，/health 与 /pair.json 每次都实时读。
+ */
+(async () => {
+  const results = await remote.startAll();
+  const ts = remote.providerByName('tailscale');
+  if (ts) {
+    const st = ts.status();
+    log(`Tailscale（可选增强）：${st.state} · ${st.detail}`);
+    if (st.action && st.action.url) log(`Tailscale 登录链接：${st.action.url}`);
+  }
+  const cf = remote.providerByName('cloudflared');
+  if (cf) {
+    const st = cf.status();
+    log(`Cloudflare 隧道：${st.state}${st.publicUrl ? ` · ${st.publicUrl}` : ''}`
+      + `${st.pid ? `（pid=${st.pid}）` : ''}`);
+  }
+  log(`异地通道候选：${remote.publicBases().join(', ') || '(暂无)'} · ${remote.note()}`);
+  // 启动失败也不要影响 USB/局域网：这里只记录
+  for (const r of results) {
+    if (r && r.result && r.result.ok === false && r.result.error) {
+      log(`${r.name} 启动未成功：${r.result.error}`);
+    }
+  }
+})();
+
+if (config.tunnelStopOnExit) {
+  // 显式要求：退出时把隧道一起停掉（默认**不停** —— 停了地址就换，异地又得重新学）
+  const stopTunnelOnExit = () => {
+    try {
+      const cf = remote.providerByName('cloudflared');
+      if (cf) cf.stop();
+    } catch (error) {
+      log(`停止隧道失败：${error.message}`);
+    }
+  };
+  process.on('exit', stopTunnelOnExit);
 }
 
 // ---------------------------------------------------------------- 桌面端直连
@@ -537,6 +651,38 @@ async function refreshDesktopState(force) {
   }
   desktop.checkedAt = Date.now();
   return desktop;
+}
+
+/**
+ * 把"探桌面端 + 拉起 DSH + 落 runtime"放到**后台**做，请求路径立即返回。
+ *
+ * 为什么要这样：握手（/handshake）过去是同步 await 这两步的。实测在 DSH 未运行时，
+ * `await dsh.start()` 会把响应拖到 **12.4 秒**，而手机端握手超时只有 8 秒 ——
+ * 结果就是**每次握手都被判超时**，用户看到的现象是"扫码连不上 / 握手时好时坏"。
+ * 握手要回答的只是"手机该连哪、用什么令牌"，这些都在缓存状态里，不需要等 DSH 起来。
+ */
+let backgroundRefreshInFlight = false;
+let backgroundRefreshLastAt = 0;
+function kickBackgroundRefresh() {
+  // 5 秒内重复触发直接忽略：手机重连时会连打几次握手，不该重复启动。
+  if (backgroundRefreshInFlight) return;
+  if (Date.now() - backgroundRefreshLastAt < 5000) return;
+  backgroundRefreshInFlight = true;
+  backgroundRefreshLastAt = Date.now();
+  (async () => {
+    try {
+      await refreshDesktopState(false);
+      if (!dsh.running) {
+        log("握手触发：后台启动 DSH 实例（不阻塞握手响应）");
+        await dsh.start();
+      }
+      await publishRuntime();
+    } catch (error) {
+      log("后台刷新失败：" + (error && error.message ? error.message : error));
+    } finally {
+      backgroundRefreshInFlight = false;
+    }
+  })();
 }
 
 /** 为桌面端 authority 现签一个会话 Cookie（密钥持久化在凭据里）。 */
@@ -665,6 +811,13 @@ const BRIDGE_AUTH_COOKIE = 'dsh-bridge-auth';
 
 function bridgeRuntime() {
   const status = dsh.status();
+  // ⚠️ 每次**现算**异地候选（配置的固定地址 + Tailscale 固定地址 + 隧道**实时**地址）。
+  //    隧道域名会随隧道进程重启而变，用启动快照会让手机拿到已失效的地址 ——
+  //    这正是"异地永远连不上"的根因，因此这里绝不缓存。
+  const remoteBases = remote.publicBases();
+  const remoteStatus = remote.status();
+  const ts = remoteStatus.tailscale || {};
+  const cf = (remote.tunnel && remote.tunnel.status()) || {};
   return {
     service: 'dsh-phone-bridge',
     version: BRIDGE_VERSION,
@@ -711,6 +864,22 @@ function bridgeRuntime() {
       usbBase: `http://127.0.0.1:${config.bridgePort}`,
       lanBases: config.lanAddresses.map((entry) => `http://${entry.address}:${config.bridgePort}`),
       lanInterfaces: config.lanAddresses,
+      // —— 异地候选（跨网络）——
+      // remoteBases 是手机端应当遍历的完整列表（固定配置 → Tailscale → 隧道，已去重排序）。
+      // 之所以同时给出分项明细：排查时要一眼看出"到底是固定通道还是临时隧道"。
+      remoteBases,
+      remoteConfigured: remote.configuredBases,
+      // 固定的 Tailscale 地址（100.x，跨 NAT/加密/重启不变）；未登录时为空数组，不伪造
+      tailscaleBase: (ts.baseUrls || [])[0] || null,
+      tailscaleBases: ts.baseUrls || [],
+      tailscaleAvailable: ts.state === 'ready',
+      tailscaleState: ts.state || 'unknown',
+      // 实时隧道地址（每次请求现取，不用启动快照）+ 隧道复用情况
+      tunnelBase: cf.publicUrl || null,
+      tunnelUptimeSeconds: cf.uptimeSeconds || 0,
+      tunnelPid: cf.pid || null,
+      remoteStable: remote.hasStable(),
+      remoteNote: remote.note(),
       // 统一入口：桥接反代（内部自动选桌面端/桥接实例，并补静态资源缓存头）
       proxyEntry: phoneEntryUrl(),
       proxyEntryLan: config.lanAddresses.map((entry) => `http://${entry.address}:${config.bridgePort}/dsh/`
@@ -753,6 +922,12 @@ function isExternalRequest(req) {
   if (/^192\.168\./.test(ip)) return false;
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return false;
   if (/^169\.254\./.test(ip)) return false;
+  // Tailscale 的 100.64.0.0/10：
+  //   它**不是**"可信本机"——tailnet 里其它设备也能到达桥接端口，所以鉴权一点都不能放宽
+  //   （authorizeDshAccess 里"免令牌"只给 127.0.0.1/::1，本函数只负责分类）。
+  //   归到"非外部"是因为：这类请求不可能来自公网扫描器（没有 tailnet 就路由不到），
+  //   而且它在局域网模式下同样需要令牌，分类为内部不会扩大暴露面。
+  if (config.trustTailscaleAsLan && isTailscaleCgnat(ip)) return false;
   return true;
 }
 
@@ -900,12 +1075,17 @@ function renderPairPage(qrDataUrl, info, embed = false) {
           font-weight:700;color:#e8eaf0;background:#0b0d12;border:1px solid #2b3446;
           border-radius:10px;padding:10px 18px}
  .tip{color:#6f7789;font-size:12px;line-height:1.7;max-width:520px}
+ /* 异地通道卡片：固定通道用绿色边框，临时隧道用黄色，一眼看出"稳不稳" */
+ .card.remote{width:min(92vw,560px)}
+ .card.remote.stable{border-color:#1f7a4d}
+ .card.remote.temporary{border-color:#7a5c1f}
 
  /* ---- 嵌入模式：只缩小尺寸，不减内容 ---- */
  body.embed{padding:12px 10px;gap:9px}
  body.embed h1{font-size:17px}
  body.embed .sub{font-size:12.5px;line-height:1.5}
  body.embed .card{padding:11px;gap:9px;border-radius:12px}
+ body.embed .card.remote{width:100%}
  body.embed img.qr{width:min(48vw,215px);padding:8px;border-radius:10px}
  body.embed .meta{font-size:12.5px;gap:14px}
  body.embed .codeval{font-size:23px;letter-spacing:4px;padding:7px 14px}
@@ -926,10 +1106,7 @@ function renderPairPage(qrDataUrl, info, embed = false) {
   <div class="codeval">${info.pairCode || '--------'}</div>
 </div>
 <div class="sub">配对地址 <code>${info.target}</code></div>
-${info.tunnelUrl ? `<div class="card" style="gap:8px">
-  <div class="sub"><b class="ok">异地通道已就绪</b>　人在外面也能连</div>
-  <code style="font-size:12px">${info.tunnelUrl}</code>
-</div>` : (info.tunnelState === 'starting' ? '<div class="sub">异地通道正在建立…</div>' : '')}
+${info.remoteHtml}
 <div class="tip">二维码与配对码等同本机操作权限，请勿外发。<br>
 App 里也可点「直接连接」——插着数据线或用同一 WiFi 时会自动发现；<br>
 异地时会自动切换到上面的公网地址。</div>
@@ -959,6 +1136,49 @@ ${embed ? `<script>
 })();
 </script>` : ''}
 </body></html>`;
+}
+
+/**
+ * 配对页上的「异地通道」卡片。
+ *
+ * 为什么值得单独做一块界面：异地连不上的**根因**几乎总是"免费快速隧道的地址变了"
+ * （实测一小时内变过 4 次）。用户在下结论"App 有 bug"之前，应当能一眼看到：
+ *   · 当前有没有**固定**异地通道（Tailscale / 手工配置的域名）；
+ *   · 若只有临时隧道，明确写出"地址会变，建议启用 Tailscale 或配置固定地址"。
+ * 这是在手机上给出可操作提示的**电脑侧对应物**（两边文案一致，避免互相甩锅）。
+ */
+function renderRemoteCard(remote) {
+  // 秒 → "x 分钟"：配对页上让人一眼看出隧道活了多久（越久越说明地址是稳定的）
+  const uptimeText = (sec) => {
+    const s = Math.max(0, Math.round(Number(sec || 0)));
+    if (s < 60) return `${s} 秒`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m} 分钟`;
+    return `${Math.floor(m / 60)} 小时 ${m % 60} 分钟`;
+  };
+  if (!remote || remote.bases.length === 0) {
+    return `<div class="card remote temporary">
+  <div class="sub"><b class="warn2">当前没有可用的异地通道</b></div>
+  <div class="tip">人在外面（不同网络）时连不上属于预期：请启用 Tailscale（登录后自动获得固定地址），
+或在 bridge.config.json 里填写固定的 <code>remoteBase</code>。</div>
+</div>`;
+  }
+  if (remote.stable) {
+    return `<div class="card remote stable">
+  <div class="sub"><b class="ok">异地通道：固定地址</b>　人在外面也能稳定连上，重启不变</div>
+  ${remote.configured.map((b) => `<code style="font-size:12px">${b}</code>`).join('')}
+  ${remote.tailscale.map((b) => `<code style="font-size:12px">${b}</code>`).join('')}
+  ${remote.tunnel ? `<div class="tip">备用临时隧道（桥接重启不会换地址）：<code style="font-size:11px">${remote.tunnel}</code></div>` : ''}
+</div>`;
+  }
+  return `<div class="card remote temporary">
+  <div class="sub"><b class="ok">异地通道：本项目自带的 Cloudflare 隧道</b>　无需账号、无需额外安装</div>
+  <code style="font-size:12px">${remote.tunnel}</code>
+  <div class="tip">隧道由项目自己的守护进程持有：<b>重启桥接不会换地址</b>${remote.uptimeSeconds
+    ? `（当前已运行 ${uptimeText(remote.uptimeSeconds)}）` : ''}。<br>
+只在隧道进程本身重启时地址才会变，此时在同一网络下打开一次 App 即会自动同步新地址。<br>
+想要"永不变化"的地址：可配置固定的 <code>remoteBase</code>，或启用可选的 Tailscale 通道。</div>
+</div>`;
 }
 
 const STATUS_PAGE = `<!doctype html>
@@ -1035,8 +1255,23 @@ const server = http.createServer(async (req, res) => {
         bridgePort: config.bridgePort,
         uptime: Math.round(process.uptime()),
         dshRunning: dsh.running,
-        // 异地通道状态：手机据此判断"能不能跨网络连回来"
-        tunnel: cfTunnel ? cfTunnel.status() : { state: 'disabled' },
+        // 异地通道状态：手机据此判断"能不能跨网络连回来"。
+        // 持久化实现下这是**实时读盘**的结果（桥接重启也会复用同一条隧道，地址不变）。
+        tunnel: (() => {
+          const st = remote.tunnel ? remote.tunnel.status() : { state: 'disabled' };
+          return {
+            state: st.state,
+            publicUrl: st.publicUrl || null,
+            lastError: st.lastError || null,
+            uptimeSeconds: st.uptimeSeconds || 0,
+            pid: st.pid || null,
+            persistent: Boolean(st.persistent),
+            reused: Boolean(remote.tunnel && remote.tunnel.lastStart && remote.tunnel.lastStart.reused),
+          };
+        })(),
+        // 异地候选（含 Tailscale 固定地址/手工配置），手机端可直接遍历
+        remoteBases: remote.publicBases(),
+        remoteNote: remote.note(),
         // 供手机端测算并校正与 PC 的时钟偏差（跨设备绝对时间比较需要同一基准）
         serverTime: Date.now(),
       });
@@ -1125,18 +1360,24 @@ const server = http.createServer(async (req, res) => {
         for (const entry of config.lanAddresses) {
           bases.push(`http://${entry.address}:${config.bridgePort}`);
         }
-        const remoteBase = cfTunnel && cfTunnel.status().publicUrl
-          ? cfTunnel.status().publicUrl
-          : null;
-        if (remoteBase) bases.push(remoteBase);
-        log(`配对码匹配成功，已下发 ${bases.length} 个候选地址${remoteBase ? '（含异地通道）' : ''}`);
+        // ⚠️ 实时取值：隧道进程重启会换域名，快照会让配对结果当场失效。
+        //    持久化隧道下这里通常是"复用中的同一地址"，但代码不能依赖这一点。
+        const remoteNow = remote.publicBases();
+        const remoteStableNow = remote.hasStable();
+        for (const base of remoteNow) bases.push(base);
+        log(`配对码匹配成功，已下发 ${bases.length} 个候选地址`
+          + `（异地 ${remoteNow.length} 个：固定通道 ${remoteStableNow ? '有' : '无'}）`);
         sendJson(res, 200, {
           ok: true,
           bases: Array.from(new Set(bases)),
           token: config.bridgeToken,
           mode: config.mode,
           // 异地基址单独给出，便于 App 在局域网不可达时直接切过去
-          remoteBase,
+          remoteBase: remoteNow[0] || null,
+          // 完整异地候选列表（App 会把它持久化为 remoteHints 供下次使用）
+          remoteBases: remoteNow,
+          remoteStable: remoteStableNow,
+          remoteNote: remote.note(),
         });
         return;
       }
@@ -1225,6 +1466,10 @@ const server = http.createServer(async (req, res) => {
             log(`二维码生成失败：${error.message}`);
           }
         }
+        const remoteBasesNow = remote.publicBases();
+        const remoteStatusNow = remote.status();
+        const tsNow = remoteStatusNow.tailscale || {};
+        const cfNow = (remote.tunnel && remote.tunnel.status()) || {};
         const body = JSON.stringify({
           ok: true,
           qrDataUrl,
@@ -1233,16 +1478,35 @@ const server = http.createServer(async (req, res) => {
           mode: config.mode,
           desktopAlive: desktop.alive,
           // 异地通道：手机拿到这个地址后，在任何网络下都能连回本机。
-          // 地址是临时的（trycloudflare），每次重启会变，所以每次配对都重新下发。
-          tunnel: cfTunnel ? cfTunnel.status() : { state: 'disabled' },
+          // 持久化隧道下它**跨桥接重启保持不变**；每次请求仍现取，绝不缓存。
+          tunnel: {
+            state: cfNow.state || 'disabled',
+            publicUrl: cfNow.publicUrl || null,
+            uptimeSeconds: cfNow.uptimeSeconds || 0,
+            pid: cfNow.pid || null,
+            persistent: Boolean(cfNow.persistent),
+            reused: Boolean(remote.tunnel && remote.tunnel.lastStart && remote.tunnel.lastStart.reused),
+          },
           endpoints: {
             usbBase: `http://127.0.0.1:${config.bridgePort}`,
             lanBases: config.lanAddresses.map((e) => `http://${e.address}:${config.bridgePort}`),
-            // 异地基址（有隧道时才有值）
-            remoteBase: cfTunnel && cfTunnel.status().publicUrl
-              ? cfTunnel.status().publicUrl
-              : null,
+            // —— 异地候选 ——
+            // remoteBases：完整列表（固定配置 → Tailscale 固定地址 → 实时隧道），手机端遍历它。
+            remoteBases: remoteBasesNow,
+            remoteConfigured: remote.configuredBases,
+            tailscaleBase: (tsNow.baseUrls || [])[0] || null,
+            tailscaleBases: tsNow.baseUrls || [],
+            tailscaleAvailable: tsNow.state === 'ready',
+            tailscaleState: tsNow.state || 'unknown',
+            tunnelBase: cfNow.publicUrl || null,
+            remoteStable: remote.hasStable(),
+            remoteNote: remote.note(),
+            // 兼容旧字段名（App 旧版本读的是 remoteBase），语义 = "首选异地地址"
+            remoteBase: remoteBasesNow[0] || null,
           },
+          remoteBases: remoteBasesNow,
+          remoteStable: remote.hasStable(),
+          remoteNote: remote.note(),
         }, null, 2);
         res.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
@@ -1276,7 +1540,10 @@ const server = http.createServer(async (req, res) => {
           }
         }
         const target = text.split('|')[1] || '';
-        const tunnelStatus = cfTunnel ? cfTunnel.status() : { state: 'disabled' };
+        const tunnelStatus = (remote.tunnel && remote.tunnel.status()) || { state: 'disabled' };
+        // 异地通道一律**实时**取值：隧道域名会变，快照等于发布一个过期地址。
+        const remoteNow = remote.publicBases();
+        const remoteStableNow = remote.hasStable();
         // ?embed=1 → DSH 插件弹窗内嵌用：排布更紧凑，并回报自身高度供父窗口精确适配
         const embed = url.searchParams.get('embed') === '1';
         const page = renderPairPage(qrDataUrl, {
@@ -1284,9 +1551,18 @@ const server = http.createServer(async (req, res) => {
           desktopAlive: desktop.alive,
           target,
           pairCode: PAIR_CODE,
-          // 异地通道：让用户直观看到"人在外面也能连回家"
+          // 异地通道：让用户直观看到"人在外面也能连"，以及"这个地址稳不稳"
           tunnelState: tunnelStatus.state,
           tunnelUrl: tunnelStatus.publicUrl || '',
+          remoteHtml: renderRemoteCard({
+            bases: remoteNow,
+            configured: remote.configuredBases,
+            tailscale: (remote.status().tailscale || {}).baseUrls || [],
+            tunnel: tunnelStatus.publicUrl || null,
+            stable: remoteStableNow,
+            note: remote.note(),
+            uptimeSeconds: tunnelStatus.uptimeSeconds || 0,
+          }),
         }, embed);
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
         res.end(page);
@@ -1304,8 +1580,10 @@ const server = http.createServer(async (req, res) => {
 
       case '/handshake':
       case '/state': {
-        await refreshDesktopState(false);
-        if (!dsh.running) await dsh.start();
+        // ⚠️ 不要在这里同步等待：原实现 await 了 refreshDesktopState + dsh.start()，
+        // 在 DSH 未运行时实测把响应拖到 12.4 秒，而手机握手超时只有 8 秒 → 必然超时。
+        // 握手的答案（入口、令牌、候选地址）都在缓存里，直接返回；拉起 DSH 交给后台。
+        kickBackgroundRefresh();
         await publishRuntime();
         const runtime = bridgeRuntime();
         sendJson(res, 200, {
@@ -1488,6 +1766,20 @@ async function main() {
   log(`PocketPilot v${BRIDGE_VERSION} 启动（模式：${config.mode}）· ${ORIGIN_MARK}`);
   log(`dsh CLI: ${config.dshCli}`);
   log(`adb    : ${config.adbPath}`);
+  log(`异地通道 provider 顺序：${(config.remoteProviders || []).join(' → ') || '(无)'}`
+    + ` · 隧道复用=${config.tunnelReuse !== false ? '开' : '关'}`);
+
+  // 只装不改（可选增强）：--install-tailscale 时走"下载 + 校验 + （确认后）安装"，
+  // 完成后照常启动桥接 —— 用户拿到的是"项目自己把异地通道准备好"，而不是一句"请自行安装"。
+  if (process.argv.includes('--install-tailscale')) {
+    log('开始准备 Tailscale（可选增强：固定异地地址）…');
+    const r = await remote.installTailscale();
+    log(`Tailscale 准备结果：${JSON.stringify({
+      ok: r.ok, state: r.state, file: r.file, source: r.source, verified: r.verified,
+      awaitingConfirm: r.awaitingConfirm, error: r.error, detail: r.detail,
+    })}`);
+    if (!r.ok && r.error) log(`未能自动完成：${r.error}`);
+  }
 
   // 专用工作区：避免把用户主目录当工作区（ACL 沙箱临时根会落在工作区内被拒）
   try {
@@ -1513,19 +1805,49 @@ async function main() {
   //    而拿到令牌就等于能在本机执行任意代码。只留指纹，用于比对"是不是同一个令牌"。
   log(`bridge token: ${maskSecret(config.bridgeToken)}`);
 
+  // 隧道看门狗：与下面的 5 秒主循环共用同一节拍。
+  // 隧道一旦死了就自动重建，新地址立刻写进 runtime/tunnel.json，
+  // 于是 /pair.json、/handshake、状态页下一轮就发布新地址（手机经本地路径握手时就能学到）。
   setInterval(async () => {
     await syncTunnel(config);
     await refreshDesktopState(false);
+    // 异地通道看门狗（只有持久化隧道提供者实现了 watch）
+    try {
+      await remote.watchAll();
+    } catch (error) {
+      log(`异地通道看门狗异常：${error.message}`);
+    }
     if (!dsh.running && !dsh.pending) {
       log('检测到 DSH 未运行，尝试拉起');
       dsh.start().catch((error) => log(`拉起失败：${error.message}`));
     }
     await publishRuntime();
   }, 5000).unref();
+
+  // 启动后把"这次到底是复用还是新建"明确写一行，便于事后诊断地址是否换过
+  const cfStart = cfTunnel && cfTunnel.lastStart;
+  if (cfStart && cfStart.publicUrl) {
+    log(cfStart.reused
+      ? `异地隧道：复用 ${cfStart.publicUrl}（${cfStart.reason}）—— 地址与上次相同`
+      : `异地隧道：新建 ${cfStart.publicUrl}（地址已变化，手机下次经本地路径握手即会自动更新）`);
+  }
 }
 
 async function shutdown(signal) {
   log(`收到 ${signal}，正在退出`);
+  // ⚠️ 默认**不**停隧道：隧道由独立守护进程持有，停掉就等于换地址，
+  //    异地又得重新学一次（这正是历史上"异地连不上"的成因）。
+  //    要停请显式 --tunnel-stop。
+  if (config.tunnelStopOnExit) {
+    try {
+      remote.stopAll();
+      log('已按 --tunnel-stop 停止异地通道');
+    } catch (error) {
+      log(`停止异地通道失败：${error.message}`);
+    }
+  } else {
+    log('保留异地隧道（地址不变）；如需一并停止请用 --tunnel-stop');
+  }
   if (!config.keepDshOnExit) await dsh.stop();
   process.exit(0);
 }

@@ -1401,7 +1401,8 @@ class MainActivity : AppCompatActivity() {
             lastGood = prefs.lastGoodBase,
             remoteBase = prefs.remoteBase,
             lanHints = prefs.lanHints,
-            usbHints = prefs.usbHints
+            usbHints = prefs.usbHints,
+            remoteHints = prefs.remoteHints
         )
         // 候选明细里可能带 ?k= 令牌（异地基址带着查询参数），必须经 maskSecrets 再进日志
         BridgeLog.info("候选通道(${candidates.size}): " + candidates.joinToString(" | ") {
@@ -1488,25 +1489,27 @@ class MainActivity : AppCompatActivity() {
                 break
             }
             val host = Link.hostPort(cand.base)
-            if (token.isNotBlank() && !isSameHost(host)) {
-                // 目标主机与令牌登记的主机不同 → 先清空，再握手（本次及后续都用空令牌）。
-                // 日志里令牌只留前 4 位：出问题时能看出"换的是不是同一份令牌"，但不足以还原。
-                BridgeLog.warn("目标主机 $host 与令牌登记主机 ${tokenHostFor()} 不同：先清空令牌再握手" +
-                    "（被清掉的令牌 " + BridgeLog.maskSecrets("token=$token") + "）")
-                prefs.token = ""
-                prefs.tokenHost = ""
-                token = ""
-                runOnUiThread { toast(getString(R.string.link_token_cleared)) }
+            val hostChanged = PairingGuard.hostChanged(host, tokenHostFor())
+            if (hostChanged && token.isNotBlank()) {
+                // ⚠️ 这里**绝不能**先清令牌（真实事故：清完握手必然 401，用户表现为"扫码也连不上、只有 USB 能连"）。
+                // "主机不同"在真实场景里极常见：同一台电脑的 127.0.0.1 / 192.168.x.x / 隧道域名是三种表示，
+                // 令牌完全有效。所以先带着令牌握一次，只有被明确拒绝(401/403)才清（见下方 PairingGuard 分支）。
+                BridgeLog.info("目标主机 " + host + " 与令牌登记主机 " + tokenHostFor() + " 不同：先带令牌握手，被拒后再清（令牌 " +
+                    BridgeLog.maskSecrets("token=" + token) + "）")
             }
 
             var hs = Bridge.handshake(cand.base, token.ifBlank { null })
             // 401：可能是令牌过期/被桥接轮换过。清掉再试一次，而不是把用户卡在门外。
-            if (!hs.ok && hs.error?.contains("令牌") == true && token.isNotBlank()) {
-                BridgeLog.warn("${cand.base} 握手提示需要重新配对，清空令牌后重试")
+            // 只有"明确被拒绝"才清令牌：网络超时/连接被拒**绝不能清** —— 那只是这次没连上，
+            // 令牌往往仍然有效；清掉等于把用户已配好的状态毁掉（拔线切局域网时最容易踩到）。
+            if (PairingGuard.shouldClearAfterFailure(hs.error, hostChanged) && token.isNotBlank()) {
+                BridgeLog.warn(cand.base + " 明确拒绝令牌（" + hs.error + "）：清空后重试一次")
                 prefs.token = ""
                 prefs.tokenHost = ""
                 token = ""
+                runOnUiThread { toast(getString(R.string.link_token_cleared)) }
                 hs = Bridge.handshake(cand.base, null)
+                if (hs.ok) return PairOutcome(true, hs, cand, "", previousTokenHost)
             }
             BridgeLog.info("握手 ${cand.label} ${cand.base}: ok=${hs.ok} mode=${hs.mode} " +
                 "desktopAlive=${hs.desktopAlive} err=${hs.error ?: "-"}")
@@ -1577,6 +1580,16 @@ class MainActivity : AppCompatActivity() {
             BridgeLog.info("登记局域网候选 ${merged.size} 个: " + merged.joinToString(", "))
         }
         if (hs.usbBase.isNotBlank()) prefs.usbHints = listOf(hs.usbBase)
+
+        // 异地候选同样要登记：临时隧道地址每次隧道重建都会变，而 App 只有**能连上电脑时**才拿得到
+        // 新地址。所以每次经 USB/局域网握手成功都覆盖更新一次，供"人在外面、只有异地可走"时使用。
+        if (hs.remoteBases.isNotEmpty()) {
+            val merged = (hs.remoteBases + prefs.remoteHints).filter { it.isNotBlank() }.distinct()
+            prefs.remoteHints = merged.take(Link.MAX_REMOTE_HINTS)
+            BridgeLog.info("登记异地候选 " + merged.size + " 个" +
+                (if (hs.remoteStable) "（含固定通道）" else "（临时隧道，地址可能变化）") + ": " + merged.joinToString(", "))
+        }
+        if (hs.remoteNote.isNotBlank()) BridgeLog.info("异地通道说明: " + hs.remoteNote)
 
         // 以链路类型决定带不带令牌（USB 回环不需要，局域网/异地必须带）
         val url = Bridge.entryUrlForMode(cand.base, cand.mode, hs.bridgeToken.ifBlank { prefs.token })
@@ -1681,7 +1694,10 @@ class MainActivity : AppCompatActivity() {
 
                 // ③ 端到端探活：失败达阈值就自动重连
                 //    超时用与择优同一个 1.2s：探活每 4s 一次，没必要为一次探测挂 3s。
-                val ms = withContext(Dispatchers.IO) { Bridge.probe(base, Bridge.PROBE_TIMEOUT_MS.toInt()) }
+                // ⚠️ 探活超时必须按链路类型给：异地链路实测 1.1~1.7s，用固定 1.2s 会误判成"不通"，
+                // 于是异地模式每 4 秒误报一次、很快触发无端重连。
+                val watchdogTimeout = Link.probeTimeoutFor(Link.classify(base).first).toInt()
+                val ms = withContext(Dispatchers.IO) { Bridge.probe(base, watchdogTimeout) }
                 if (ms != null) {
                     if (failures > 0) {
                         BridgeLog.heal("连接已恢复", "第 $failures 次失败后")
@@ -1694,7 +1710,10 @@ class MainActivity : AppCompatActivity() {
                     setStatus(Status.RECONNECTING, getString(R.string.status_reconnecting, failures), base)
                     // 自动重连：阈值从"每 3 次(12s)"放宽到"每 6 次(24s)"，并且必须先过恢复闸门。
                     // 单纯网络抖动不该整页重连 —— 重连会重载页面，打断用户正在做的事。
-                    if (failures % 6 == 0) {
+                    // 失败 1 次就重新选路：一次探活失败已足以说明"这条路没了"（拔线、Wi-Fi 切换、隧道被回收
+                    // 都属于这一类）。原先要等 6 次(24s) 才重选，用户感受到的就是"画面僵住不动"。
+                    // 破坏性动作仍由 allowRecovery 闸门把关，不会打断用户正在做的事。
+                    if (failures == 1 || failures % 6 == 0) {
                         if (allowRecovery("自动重连")) {
                             BridgeLog.heal("自动重连", "第 $failures 次失败")
                             // 刻意**重新择优全部候选**而不是只重连 lastGood：

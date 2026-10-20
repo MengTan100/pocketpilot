@@ -98,4 +98,58 @@ class Prefs(context: Context) {
             .map { it.trim() }
             .filter { it.isNotEmpty() }
         set(v) = sp.edit().putString("usb_hints", v.take(4).joinToString(",")).apply()
+
+    /**
+     * 上次（经由本地路径）握手学到的**异地候选列表**。
+     *
+     * 为什么必须单独持久化：异地的临时隧道地址**只在 App 能连上电脑时才学得到**。
+     * 人在外面时若手里存的是过期域名，就再也没有机会更新它 —— 异地从此永远连不上。
+     * 所以只要 App 还能走 USB/局域网（同网时很常见），握手成功后就必须把
+     * **当前**的异地地址覆盖写到这里（见 MainActivity.applyHandshake 与
+     * Link.candidates 的 remoteHints 参数）。
+     *
+     * 与 lanHints/usbHints 同一风格（逗号分隔字符串，读取时过滤空项），
+     * 上限 [Link.MAX_REMOTE_HINTS]：异地地址失效快，留太多只会拖慢探测。
+     */
+    var remoteHints: List<String>
+        get() = (sp.getString("remote_hints", "") ?: "")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        set(v) = sp.edit().putString("remote_hints", v.take(Link.MAX_REMOTE_HINTS).joinToString(",")).apply()
+
+    /**
+     * **原子地**写入一次配对结果：地址 + 令牌 + 令牌归属主机。
+     *
+     * 为什么必须"一起写"：这三者是同一个事实的三个字段。
+     * 曾经的真实故障就是顺序问题 —— 先清 `token`（或先改 `baseUrl`）再去握手，
+     * 于是桥接用 401 拒绝，用户看到"扫码也连不上"。
+     * 用**一次** SharedPreferences 事务提交，就不会出现
+     * "地址已更新但令牌还是旧的/已被清空"这种中间态被别人读到。
+     *
+     * @param base 目标地址（会做归一化）
+     * @param token 令牌（空串 = 不带令牌，例如纯 USB 回环场景）
+     * @param tokenHost 令牌归属于哪台主机（`host:port`）。为空时按 base 推导。
+     */
+    fun writePairing(base: String, token: String, tokenHost: String) {
+        val host = tokenHost.ifBlank { Link.hostPort(base) }
+        sp.edit()
+            .putString("base_url", base)
+            .putString("token", token)
+            .putString("token_host", host)
+            .commit()
+    }
+
+    /**
+     * 换主机时**原子地**清空令牌与其归属（地址保留：用户还是要连那台新主机）。
+     *
+     * 只在"带令牌握手被明确拒绝（401/403）"之后调用（见 PairingGuard）——
+     * 绝不能在握手**之前**调用，那会把还能用的令牌白白毁掉。
+     */
+    fun clearToken() {
+        sp.edit()
+            .putString("token", "")
+            .putString("token_host", "")
+            .commit()
+    }
 }
